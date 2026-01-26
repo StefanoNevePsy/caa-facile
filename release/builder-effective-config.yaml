@@ -1,0 +1,15 @@
+directories:
+  output: release
+  buildResources: build
+appId: com.caafacile.app
+productName: CAA Facile
+mac:
+  category: public.app-category.education
+  target: dmg
+  hardenedRuntime: true
+files:
+  - filter:
+      - dist/**/*
+      - electron-main.js
+      - public/**/*
+electronVersion: 40.0.0
