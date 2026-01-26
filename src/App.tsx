@@ -1378,20 +1378,20 @@ const HelpModal = ({ isOpen, onClose }) => {
 };
 
 // --- COMPONENTE TIMER VISIVO AVANZATO (FIX LOOP E POSIZIONE) ---
-// --- SOTTOCOMPONENTE INPUT (Definito FUORI per evitare problemi di focus) ---
+// --- SOTTOCOMPONENTE INPUT (Super Compatto per Mobile) ---
 const TimeInput = ({ value, onChange, onFocus, onBlur, label, type, onArrowClick }) => {
   return (
-    <div className="flex flex-col items-center gap-1 group">
+    <div className="flex flex-col items-center gap-0.5 group">
        {/* Freccia Su */}
        <button 
          onClick={() => onArrowClick(type, 1)} 
-         className="w-full h-5 flex items-center justify-center rounded-t-md bg-slate-100 hover:bg-blue-100 text-slate-400 hover:text-blue-600 transition-colors opacity-0 group-hover:opacity-100"
+         className="w-full h-6 flex items-center justify-center rounded-t-md bg-slate-100 hover:bg-blue-100 text-slate-400 hover:text-blue-600 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 active:bg-blue-200"
        >
          <ChevronUp className="w-3 h-3"/>
        </button>
        
-       {/* Campo Input */}
-       <div className="relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-1 py-2 rounded-lg w-[4.5rem] text-center shadow-sm focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all">
+       {/* Campo Input (Ridotto font e width) */}
+       <div className="relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-0.5 py-1 rounded-lg w-12 md:w-[4.5rem] text-center shadow-sm focus-within:ring-2 focus-within:ring-blue-500 transition-all">
           <input 
             type="text"
             inputMode="numeric"
@@ -1400,17 +1400,18 @@ const TimeInput = ({ value, onChange, onFocus, onBlur, label, type, onArrowClick
             onChange={(e) => onChange(type, e.target.value)}
             onBlur={onBlur}
             onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
-            className="w-full bg-transparent text-center text-3xl font-mono font-bold text-slate-700 dark:text-white outline-none appearance-none p-0 leading-none placeholder-slate-200"
+            className="w-full bg-transparent text-center text-xl md:text-3xl font-mono font-bold text-slate-700 dark:text-white outline-none appearance-none p-0 leading-none placeholder-slate-200"
             placeholder="00"
             autoComplete="off"
           />
-          <span className="absolute top-1/2 -translate-y-1/2 -right-2 text-slate-300 font-bold text-xl pointer-events-none">{label}</span>
+          {/* Label nascosta su mobile piccolissimo, visibile su desktop */}
+          <span className="hidden md:block absolute top-1/2 -translate-y-1/2 -right-2 text-slate-300 font-bold text-xl pointer-events-none">{label}</span>
        </div>
 
        {/* Freccia Giù */}
        <button 
          onClick={() => onArrowClick(type, -1)} 
-         className="w-full h-5 flex items-center justify-center rounded-b-md bg-slate-100 hover:bg-blue-100 text-slate-400 hover:text-blue-600 transition-colors opacity-0 group-hover:opacity-100"
+         className="w-full h-6 flex items-center justify-center rounded-b-md bg-slate-100 hover:bg-blue-100 text-slate-400 hover:text-blue-600 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 active:bg-blue-200"
        >
          <ChevronDown className="w-3 h-3"/>
        </button>
@@ -1418,8 +1419,7 @@ const TimeInput = ({ value, onChange, onFocus, onBlur, label, type, onArrowClick
   );
 };
 
-// --- COMPONENTE TIMER VISIVO PRINCIPALE ---
-// --- COMPONENTE TIMER VISIVO AVANZATO (FIX LOOP ONDA & NO RIGA) ---
+// --- COMPONENTE TIMER VISIVO PRINCIPALE (Mobile Fit) ---
 const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
   const [timeLeft, setTimeLeft] = useState(settings.duration || 60);
   const [isActive, setIsActive] = useState(false);
@@ -1438,7 +1438,6 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
   const isDark = document.documentElement.classList.contains('dark');
   const presets = settings.presets || [60, 180, 300, 600];
 
-  // Helper per ottenere il colore HEX esatto (cruciale per SVG fill)
   const getProgressColorHex = (pct) => {
     if (pct > 50) return '#10b981'; // emerald-500
     if (pct > 20) return '#facc15'; // yellow-400
@@ -1466,7 +1465,6 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
     setIsRinging(false);
   };
 
-  // TICKER
   useEffect(() => {
     let interval = null;
     if (isActive && timeLeft > 0) {
@@ -1485,7 +1483,6 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
     return () => clearInterval(interval);
   }, [isActive, timeLeft, settings.soundId]);
 
-  // SYNC INPUT
   useEffect(() => {
     if (activeField === null) {
       const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
@@ -1543,89 +1540,91 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
   const currentColor = getProgressColorHex(percentage); 
 
   return (
-    <div className="flex flex-col items-center w-full max-w-4xl mx-auto p-2 md:p-4 animate-in fade-in">
+    <div className="flex flex-col items-center w-full max-w-4xl mx-auto p-0 animate-in fade-in">
       <audio ref={audioRef} preload="auto" />
       
-      {/* HEADER CONTROLLI (Responsive) */}
-      <div className="w-full bg-white dark:bg-slate-800 p-4 md:p-6 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 mb-6 md:mb-8 flex flex-col gap-4 md:gap-6">
+      {/* HEADER CONTROLLI COMPATTI */}
+      <div className="w-full bg-white dark:bg-slate-800 p-3 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 mb-4 flex flex-col gap-3">
         
-        <div className="flex flex-col md:flex-row justify-between items-center gap-4 md:gap-6">
-           {/* Gruppo Input Tempo + Play */}
-           <div className="flex items-center gap-3 md:gap-6 bg-slate-50 dark:bg-slate-900/50 p-2 md:p-3 rounded-2xl border border-slate-100 dark:border-slate-700 w-full md:w-auto justify-center md:justify-start">
-              <div className="flex gap-2 md:gap-4 pr-2 md:pr-4 border-r border-slate-200 dark:border-slate-700">
+        <div className="flex justify-between items-start gap-2">
+           
+           {/* BOX SINISTRA: Input Tempo e Play */}
+           <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 p-2 rounded-xl border border-slate-100 dark:border-slate-700">
+              <div className="flex gap-1 pr-2 border-r border-slate-200 dark:border-slate-700">
                  <TimeInput value={inputMin} type="min" label=":" onFocus={() => setActiveField('min')} onBlur={commitTime} onChange={handleInputChange} onArrowClick={handleArrowClick}/>
                  <TimeInput value={inputSec} type="sec" label="" onFocus={() => setActiveField('sec')} onBlur={commitTime} onChange={handleInputChange} onArrowClick={handleArrowClick}/>
               </div>
-              <div className="flex gap-2">
-                 <button onClick={toggleTimer} className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl shadow-lg flex items-center justify-center transition-all active:scale-95 ${isActive ? 'bg-amber-100 text-amber-600' : isRinging ? 'bg-red-600 text-white animate-bounce' : 'bg-green-500 text-white'}`}>
-                    {isRinging || isActive ? <Pause className="w-6 h-6 fill-current"/> : <Play className="w-6 h-6 fill-current ml-1"/>}
+              <div className="flex flex-col gap-1">
+                 <button onClick={toggleTimer} className={`w-10 h-10 md:w-12 md:h-12 rounded-xl shadow-sm flex items-center justify-center transition-all active:scale-95 ${isActive ? 'bg-amber-100 text-amber-600' : isRinging ? 'bg-red-600 text-white animate-bounce' : 'bg-green-500 text-white'}`}>
+                    {isRinging || isActive ? <Pause className="w-5 h-5 fill-current"/> : <Play className="w-5 h-5 fill-current ml-0.5"/>}
                  </button>
-                 <button onClick={resetTimer} className="w-12 h-12 md:w-14 md:h-14 bg-white dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-600 rounded-2xl flex items-center justify-center">
-                    <ResetIcon className="w-6 h-6"/>
+                 <button onClick={resetTimer} className="w-10 h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-600 rounded-xl flex items-center justify-center active:bg-slate-100">
+                    <ResetIcon className="w-5 h-5"/>
                  </button>
               </div>
            </div>
 
-           {/* Opzioni */}
-           <div className="flex flex-col md:items-end gap-3 w-full md:w-auto">
-             <div className="flex items-center justify-center md:justify-end gap-2 bg-white dark:bg-slate-800 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm w-full md:w-auto">
-                <Volume2 className="w-4 h-4 text-slate-400 ml-2"/>
-                <select value={settings.soundId || 'beep'} onChange={(e) => onUpdateSettings('soundId', e.target.value)} className="bg-transparent text-sm font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer py-1 pr-2 w-full md:w-auto text-center md:text-left">
+           {/* BOX DESTRA: Suoni e Preset Rapidi */}
+           <div className="flex-1 flex flex-col items-end gap-2">
+             <div className="w-full flex items-center gap-1 bg-white dark:bg-slate-800 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
+                <Volume2 className="w-3 h-3 text-slate-400 shrink-0 ml-1"/>
+                <select value={settings.soundId || 'beep'} onChange={(e) => onUpdateSettings('soundId', e.target.value)} className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer py-1 w-full text-right">
                   {TIMER_SOUNDS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                 </select>
              </div>
-             <div className="flex items-center justify-center md:justify-end gap-2 w-full">
-               <button onClick={() => manualUpdateTime(Math.max(0, timeLeft - 10))} className="flex-1 md:flex-none px-3 py-2 bg-red-50 text-red-600 rounded-lg text-xs font-bold border border-red-100">-10s</button>
-               <button onClick={() => manualUpdateTime(timeLeft + 10)} className="flex-1 md:flex-none px-3 py-2 bg-green-50 text-green-600 rounded-lg text-xs font-bold border border-green-100">+10s</button>
+             
+             <div className="flex w-full gap-1">
+               <button onClick={() => manualUpdateTime(Math.max(0, timeLeft - 10))} className="flex-1 py-2 bg-red-50 text-red-600 rounded-lg text-[10px] font-bold border border-red-100 hover:bg-red-100 active:scale-95 transition-all">-10s</button>
+               <button onClick={() => manualUpdateTime(timeLeft + 10)} className="flex-1 py-2 bg-green-50 text-green-600 rounded-lg text-[10px] font-bold border border-green-100 hover:bg-green-100 active:scale-95 transition-all">+10s</button>
              </div>
            </div>
         </div>
         
-        {/* Preset */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide w-full">
-           {presets.map(p => (
-             <div key={p} className="relative group shrink-0">
-                <button onClick={() => { stopAudio(); setIsActive(false); manualUpdateTime(p); }} className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white transition-all shadow-sm min-w-[60px]">
-                  {Math.floor(p / 60)}:{(p % 60).toString().padStart(2, '0')}
-                </button>
-                <button onClick={() => onUpdateSettings('presets', presets.filter(val => val !== p))} className="absolute -top-1.5 -right-1.5 bg-white text-red-500 border border-red-100 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm z-10"><X className="w-3 h-3"/></button>
-             </div>
-           ))}
-           <div className="w-px h-8 bg-slate-200 mx-1 shrink-0"></div>
-           <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 p-1 rounded-lg border border-slate-200 shrink-0">
-               <input type="number" placeholder="M" value={newMin} onChange={(e) => setNewMin(e.target.value)} className="w-8 bg-transparent text-center font-bold outline-none text-xs" />
-               <span className="text-slate-300 text-xs">:</span>
-               <input type="number" placeholder="S" value={newSec} onChange={(e) => setNewSec(e.target.value)} className="w-8 bg-transparent text-center font-bold outline-none text-xs" />
-               <button onClick={addPreset} className="p-1.5 bg-blue-100 text-blue-600 rounded-md hover:bg-blue-600 hover:text-white transition-colors"><Plus className="w-3 h-3"/></button>
-           </div>
+        {/* PRESET SCROLLABILI */}
+        <div className="w-full border-t dark:border-slate-700 pt-2">
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide w-full touch-pan-x">
+            {presets.map(p => (
+                <div key={p} className="relative group shrink-0">
+                    <button onClick={() => { stopAudio(); setIsActive(false); manualUpdateTime(p); }} className="px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white transition-all min-w-[50px]">
+                    {Math.floor(p / 60)}:{(p % 60).toString().padStart(2, '0')}
+                    </button>
+                    <button onClick={() => onUpdateSettings('presets', presets.filter(val => val !== p))} className="absolute -top-1.5 -right-1.5 bg-white text-red-500 border border-red-100 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm z-10"><X className="w-3 h-3"/></button>
+                </div>
+            ))}
+            <div className="w-px h-6 bg-slate-200 mx-1 shrink-0"></div>
+            
+            <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 p-1 rounded-lg border border-slate-200 shrink-0">
+                <input type="number" placeholder="M" value={newMin} onChange={(e) => setNewMin(e.target.value)} className="w-6 bg-transparent text-center font-bold outline-none text-xs" />
+                <span className="text-slate-300 text-xs">:</span>
+                <input type="number" placeholder="S" value={newSec} onChange={(e) => setNewSec(e.target.value)} className="w-6 bg-transparent text-center font-bold outline-none text-xs" />
+                <button onClick={addPreset} className="p-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-600 hover:text-white transition-colors"><Plus className="w-3 h-3"/></button>
+            </div>
+            </div>
         </div>
       </div>
 
-      {/* BOCCIA LIQUIDA (FIX LOOP SVG) */}
+      {/* BOCCIA LIQUIDA RIDOTTA (w-56 mobile / w-96 desktop) */}
       <div 
-        className="relative w-72 h-72 sm:w-[450px] sm:h-[450px] rounded-full border-[12px] border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden flex items-center justify-center transition-all duration-700 bg-white dark:bg-slate-900"
+        className="relative w-56 h-56 md:w-96 md:h-96 rounded-full border-[10px] md:border-[12px] border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden flex items-center justify-center transition-all duration-700 bg-white dark:bg-slate-900 mx-auto"
         style={{ backgroundColor: getBackgroundColor() }}
       >
          {/* 1. Immagine Sotto */}
-         <div className="absolute inset-0 flex items-center justify-center p-16 z-0 cursor-pointer" onClick={onSelectImage}>
+         <div className="absolute inset-0 flex items-center justify-center p-10 md:p-16 z-0 cursor-pointer" onClick={onSelectImage}>
             {settings.timerImage ? (
                 settings.timerImage.imageUrl ? <img src={settings.timerImage.imageUrl} className="w-full h-full object-contain animate-in fade-in zoom-in duration-500 drop-shadow-md"/> : 
-                settings.timerImage.iconId ? (() => { const IconComp = getIconComponent(settings.timerImage.iconId); const style = getPresetStyle(settings.timerImage.iconId); return <IconComp className={`w-32 h-32 md:w-40 md:h-40 ${style.icon} filter drop-shadow-sm`} />; })() : null
+                settings.timerImage.iconId ? (() => { const IconComp = getIconComponent(settings.timerImage.iconId); const style = getPresetStyle(settings.timerImage.iconId); return <IconComp className={`w-28 h-28 md:w-40 md:h-40 ${style.icon} filter drop-shadow-sm`} />; })() : null
             ) : (
-               <div className="flex flex-col items-center text-slate-300 dark:text-slate-600 transition-colors hover:text-blue-400"><ImageIcon className="w-16 h-16 md:w-20 md:h-20 mb-2 opacity-50"/><span className="text-[10px] md:text-xs font-bold uppercase tracking-widest text-center">Tocca per immagine</span></div>
+               <div className="flex flex-col items-center text-slate-300 dark:text-slate-600 transition-colors hover:text-blue-400"><ImageIcon className="w-12 h-12 md:w-20 md:h-20 mb-2 opacity-50"/><span className="text-[9px] md:text-xs font-bold uppercase tracking-widest text-center">Tocca per immagine</span></div>
             )}
          </div>
 
          {/* 2. Liquido e Onde SVG (Doppio ciclo per loop perfetto) */}
          <div className="liquid-container" style={{ height: `${percentage}%`, backgroundColor: currentColor }}>
-            {/* Solo se c'è liquido, mostra le onde */}
             {percentage > 0.5 && percentage < 99.5 && (
               <div className="wave-wrapper" style={{ color: currentColor, marginBottom: '-1px' }}>
-                 {/* Onda Dietro */}
                  <svg className="wave-svg wave-back" viewBox="0 0 2000 100" preserveAspectRatio="none">
                     <path d="M 0 100 V 50 Q 250 10 500 50 T 1000 50 T 1500 50 T 2000 50 V 100 H 0 Z" fill="currentColor"/>
                  </svg>
-                 {/* Onda Davanti */}
                  <svg className="wave-svg wave-front" viewBox="0 0 2000 100" preserveAspectRatio="none">
                     <path d="M 0 100 V 50 Q 250 10 500 50 T 1000 50 T 1500 50 T 2000 50 V 100 H 0 Z" fill="currentColor"/>
                  </svg>
@@ -1635,7 +1634,7 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
 
          {/* 3. Countdown */}
          {isActive && (
-            <div className="absolute z-30 font-black text-5xl md:text-6xl text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] opacity-90 pointer-events-none">
+            <div className="absolute z-30 font-black text-4xl md:text-6xl text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] opacity-90 pointer-events-none">
                {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
             </div>
          )}
@@ -2778,13 +2777,13 @@ export default function App() {
                    </div>
                 </div>
               )}
-              {/* Messaggio "Vuoto" solo per Grid e Sequence (Story e Pecs hanno le loro UI dedicate) */}
-              {currentBoard.type !== 'token' && currentBoard.type !== 'story' && currentBoard.type !== 'pecs' && activeItems.length === 0 && (
-                <div className="text-center text-slate-400">
-                  <div className="bg-white dark:bg-slate-800 p-4 rounded-full inline-block mb-3 shadow-sm"><ImageIcon className="w-8 h-8 opacity-50" /></div>
-                  <p>{isLocked ? "Nessun elemento." : "Clicca \"Aggiungi\" per iniziare."}</p>
-                </div>
-              )}
+              {/* Messaggio "Vuoto" (NASCOSTO PER IL TIMER) */}
+{currentBoard.type !== 'token' && currentBoard.type !== 'story' && currentBoard.type !== 'pecs' && currentBoard.type !== 'timer' && activeItems.length === 0 && (
+  <div className="text-center text-slate-400">
+    <div className="bg-white dark:bg-slate-800 p-4 rounded-full inline-block mb-3 shadow-sm"><ImageIcon className="w-8 h-8 opacity-50" /></div>
+    <p>{isLocked ? "Nessun elemento." : "Clicca \"Aggiungi\" per iniziare."}</p>
+  </div>
+)}
 
               {/* Render Standard per Grid e Sequence */}
               {(currentBoard.type === 'grid' || currentBoard.type === 'sequence') && (
