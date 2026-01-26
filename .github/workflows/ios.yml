@@ -5,7 +5,6 @@ on:
 
 jobs:
   build:
-    # MODIFICA: Usiamo l'ultima versione stabile di macOS (Apple Silicon)
     runs-on: macos-latest
     
     steps:
@@ -14,7 +13,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
 
       - name: Install Dependencies
         run: npm install
@@ -25,13 +24,24 @@ jobs:
       - name: Setup Capacitor
         run: |
           npm install @capacitor/core @capacitor/cli @capacitor/ios
-          npx cap add ios
+          
+          # 1. Inizializza
+          npx cap init "CAA Facile" "com.caa.facile" --web-dir=dist
+          
+          # 2. Aggiungi iOS (ignora errori se esiste già)
+          npx cap add ios || true
+
+          # 3. FIX PROGETTO XCODE: 
+          # Imposta il target di deployment a 16.0 modificando il file di progetto
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/IPHONEOS_DEPLOYMENT_TARGET = 16.0;/g' ios/App/App.xcodeproj/project.pbxproj
+
+          # 4. Sincronizza tutto
           npx cap sync ios
 
       - name: Build xArchive (No Code Signing)
         run: |
           cd ios/App
-          xcodebuild -workspace App.xcworkspace \
+          xcodebuild -project App.xcodeproj \
             -scheme App \
             -configuration Release \
             -archivePath App.xcarchive \

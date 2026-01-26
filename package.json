@@ -16,6 +16,7 @@
     "dexie": "^3.2.4",
     "firebase": "^12.8.0",
     "lucide-react": "^0.263.1",
+    "mobile-drag-drop": "^3.0.0-rc.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-easy-crop": "^5.5.6",

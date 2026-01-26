@@ -57,6 +57,15 @@ import {
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { removeBackground } from "@imgly/background-removal";
+// Aggiungi questi import in alto
+import { polyfill } from "mobile-drag-drop";
+import { scrollBehaviourDragImageTranslateOverride } from "mobile-drag-drop/scroll-behaviour";
+import "mobile-drag-drop/default.css";
+
+// Chiama questa funzione subito fuori dal componente, o dentro uno useEffect in App
+polyfill({
+    dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride
+});
 
 /**
  * ==========================================
@@ -1160,11 +1169,12 @@ const PictogramCard = ({
 };
 
 // --- HELP MODAL COMPONENT ---
+// --- HELP MODAL COMPONENT (AGGIORNATO CON NUOVE ISTRUZIONI) ---
 const HelpModal = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in backdrop-blur-sm">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4 animate-in fade-in backdrop-blur-sm">
       <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 dark:border-slate-700">
         
         {/* Header */}
@@ -1175,7 +1185,7 @@ const HelpModal = ({ isOpen, onClose }) => {
             </div>
             <div>
               <h3 className="text-xl font-bold text-slate-900 dark:text-white">Manuale Istruzioni</h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Guida visiva a tutte le funzionalità</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Guida alle funzionalità v1.2</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors">
@@ -1186,63 +1196,52 @@ const HelpModal = ({ isOpen, onClose }) => {
         {/* Content Scrollable */}
         <div className="flex-1 overflow-y-auto p-6 space-y-10 text-slate-700 dark:text-slate-300">
           
-          {/* 1. GLI STRUMENTI CLINICI (Aggiornato) */}
+          {/* 1. GLI STRUMENTI CLINICI */}
           <section>
             <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-4 border-b pb-2 dark:border-slate-700">
               1. Gli Strumenti a Disposizione
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              
-              {/* Comunicazione */}
               <div className="p-4 rounded-xl bg-blue-50/50 dark:bg-slate-700/30 border border-blue-100 dark:border-slate-600">
                 <div className="flex items-center gap-2 mb-2 text-blue-700 dark:text-blue-300 font-bold">
                   <LayoutGrid className="w-5 h-5" /> Comunicazione
                 </div>
-                <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-                  Tabelle a griglia con simboli e foto (CAA classica). Supporta navigazione a più pagine per categorie (es. Cibo, Emozioni).
+                <p className="text-xs leading-relaxed opacity-80">
+                  Tabelle a griglia con simboli. Supporta più pagine e navigazione per categorie.
                 </p>
               </div>
-              
-              {/* Agenda Visiva */}
               <div className="p-4 rounded-xl bg-emerald-50/50 dark:bg-slate-700/30 border border-emerald-100 dark:border-slate-600">
                 <div className="flex items-center gap-2 mb-2 text-emerald-700 dark:text-emerald-300 font-bold">
                   <ListOrdered className="w-5 h-5" /> Agenda Visiva
                 </div>
-                <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-                  Sequenze di azioni (task analysis) o routine giornaliere. I passaggi possono essere spuntati <CheckCircle2 className="w-3 h-3 inline"/> al completamento.
+                <p className="text-xs leading-relaxed opacity-80">
+                  Routine giornaliere o sequenze. Spunta le azioni completate <CheckCircle2 className="w-3 h-3 inline"/>.
                 </p>
               </div>
-
-              {/* Token Economy */}
               <div className="p-4 rounded-xl bg-amber-50/50 dark:bg-slate-700/30 border border-amber-100 dark:border-slate-600">
                 <div className="flex items-center gap-2 mb-2 text-amber-700 dark:text-amber-300 font-bold">
                   <Trophy className="w-5 h-5" /> Token Economy
                 </div>
-                <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-                  Rinforzo positivo a gettoni. Definisci l'obiettivo, il numero di token e il premio finale. Integrabile con l'Agenda.
+                <p className="text-xs leading-relaxed opacity-80">
+                  Rinforzo a gettoni con premio finale.
                 </p>
               </div>
-
-              {/* Storia Sociale (NUOVO) */}
               <div className="p-4 rounded-xl bg-pink-50/50 dark:bg-slate-700/30 border border-pink-100 dark:border-slate-600">
                 <div className="flex items-center gap-2 mb-2 text-pink-700 dark:text-pink-300 font-bold">
                   <Book className="w-5 h-5" /> Storia Sociale
                 </div>
-                <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-                  Crea narrazioni per spiegare contesti sociali o emozioni. Scrivi la frase e l'app abbina automaticamente i simboli al testo (stile SymWriter).
+                <p className="text-xs leading-relaxed opacity-80">
+                  Narrazioni con simboli automatici (stile SymWriter) pronte per la stampa.
                 </p>
               </div>
-
-              {/* Costruttore PECS (NUOVO) */}
               <div className="p-4 rounded-xl bg-indigo-50/50 dark:bg-slate-700/30 border border-indigo-100 dark:border-slate-600">
                 <div className="flex items-center gap-2 mb-2 text-indigo-700 dark:text-indigo-300 font-bold">
                   <Scissors className="w-5 h-5" /> Costruttore PECS
                 </div>
-                <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-                  Generatore di griglie ottimizzate per la stampa (A4). Imposta le misure in cm e stampa direttamente per creare materiale cartaceo da ritagliare.
+                <p className="text-xs leading-relaxed opacity-80">
+                  Crea griglie di etichette su misura (cm) da stampare e ritagliare.
                 </p>
               </div>
-
             </div>
           </section>
 
@@ -1252,119 +1251,107 @@ const HelpModal = ({ isOpen, onClose }) => {
               2. Modalità d'Uso (Il Lucchetto)
             </h4>
             <div className="flex flex-col md:flex-row gap-6">
-              <div className="flex-1 flex gap-4">
+              
+              {/* EDIT MODE */}
+              <div className="flex-1 flex gap-4 bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl">
                 <div className="p-3 bg-emerald-100 text-emerald-700 rounded-2xl h-min">
                   <Unlock className="w-6 h-6" />
                 </div>
                 <div>
-                  <h5 className="font-bold text-slate-900 dark:text-white">Modalità Modifica</h5>
-                  <p className="text-sm mt-1">
-                    Quando il lucchetto è <strong>aperto</strong>, sei in modalità editing.
-                    Puoi aggiungere <Plus className="w-3 h-3 inline bg-slate-200 rounded-sm"/> elementi, trascinarli per riordinare, cambiare i testi e cliccare sulle immagini per sostituirle <RotateCcw className="w-3 h-3 inline"/>.
-                  </p>
+                  <h5 className="font-bold text-slate-900 dark:text-white mb-2">Modalità Modifica (Aperto)</h5>
+                  <ul className="text-sm space-y-2 text-slate-600 dark:text-slate-300">
+                    <li className="flex items-start gap-2">
+                        <span className="bg-slate-200 text-slate-600 rounded px-1.5 py-0.5 text-xs font-bold mt-0.5">1</span>
+                        <span><strong>Aggiungi:</strong> Usa il tasto <Plus className="w-3 h-3 inline"/> per inserire nuovi simboli.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                        <span className="bg-slate-200 text-slate-600 rounded px-1.5 py-0.5 text-xs font-bold mt-0.5">2</span>
+                        <span><strong>Sposta (Drag & Drop):</strong> Tieni premuto un simbolo e trascinalo. Una <span className="text-blue-500 font-bold">linea blu</span> apparirà per indicarti esattamente dove verrà inserito.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                        <span className="bg-slate-200 text-slate-600 rounded px-1.5 py-0.5 text-xs font-bold mt-0.5">3</span>
+                        <span><strong>Modifica:</strong> Tocca un'immagine per cambiarla o il testo per riscriverlo.</span>
+                    </li>
+                  </ul>
                 </div>
               </div>
               
-              <div className="flex-1 flex gap-4">
+              {/* KID MODE */}
+              <div className="flex-1 flex gap-4 bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl">
                 <div className="p-3 bg-red-100 text-red-600 rounded-2xl h-min">
                   <Lock className="w-6 h-6" />
                 </div>
                 <div>
-                  <h5 className="font-bold text-slate-900 dark:text-white">Modalità Bambino</h5>
-                  <p className="text-sm mt-1">
-                    Clicca il lucchetto per <strong>bloccare</strong>. L'interfaccia si pulisce: spariscono i tasti di modifica.
-                    Il bambino può solo spuntare le azioni completate o ricevere i token cliccando sugli spazi vuoti.
+                  <h5 className="font-bold text-slate-900 dark:text-white mb-2">Modalità Bambino (Chiuso)</h5>
+                  <p className="text-sm mb-2">
+                    L'interfaccia si blocca per evitare modifiche accidentali.
                   </p>
+                  <ul className="text-sm space-y-1 text-slate-600 dark:text-slate-300 list-disc pl-4">
+                     <li>Le immagini <strong>non si spostano</strong> più.</li>
+                     <li>Toccando un simbolo, questo viene <strong>evidenziato</strong> o spuntato (Agenda).</li>
+                     <li>Ideale per l'utilizzo quotidiano.</li>
+                  </ul>
                 </div>
               </div>
             </div>
           </section>
 
-          {/* 3. TOKEN ECONOMY AVANZATA */}
-          <section className="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
-            <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-              <Star className="w-5 h-5 text-amber-500" /> Funzioni Speciali Token Economy
-            </h4>
-            <ul className="grid md:grid-cols-2 gap-4 text-sm">
-              <li className="flex items-start gap-2">
-                <Palette className="w-4 h-4 mt-1 text-purple-500" />
-                <span>
-                  <strong>Colori Adattivi:</strong> Se carichi una foto personale come timbro, il bordo e lo sfondo del gettone si coloreranno automaticamente in base al colore dominante della foto.
-                </span>
-              </li>
-              <li className="flex items-start gap-2">
-                <LayoutGrid className="w-4 h-4 mt-1 text-blue-500" />
-                <span>
-                  <strong>Agenda Affiancata:</strong> Puoi collegare un'agenda visiva esistente alla Token Economy. Lo schermo si dividerà: a sinistra i compiti da svolgere, a destra i punti guadagnati.
-                </span>
-              </li>
-            </ul>
-          </section>
-
-          {/* 4. FONTI IMMAGINI */}
+          {/* 3. RICERCA E AGGIUNTA VELOCE */}
           <section>
             <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-4 border-b pb-2 dark:border-slate-700">
-              3. Dove trovare le immagini
+              3. Ricerca Immagini & Trucchi
             </h4>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-center text-xs">
-              <div className="p-3 bg-white dark:bg-slate-700 rounded-xl border dark:border-slate-600">
-                <div className="font-bold mb-1 text-blue-600 dark:text-blue-400">Arasaac</div>
-                Simboli CAA standardizzati.
+            
+            {/* Box Multi Selezione */}
+            <div className="mb-6 p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl flex gap-4 items-start">
+               <div className="bg-indigo-100 dark:bg-indigo-800 p-2.5 rounded-lg text-indigo-600 dark:text-indigo-300 shrink-0">
+                  <Zap className="w-6 h-6" />
+               </div>
+               <div>
+                  <h5 className="font-bold text-indigo-900 dark:text-indigo-100 text-base">Novità: Inserimento Multiplo Veloce</h5>
+                  <p className="text-sm text-indigo-800 dark:text-indigo-200 mt-1 leading-relaxed">
+                     Non devi aggiungere un simbolo alla volta! Quando cerchi le immagini, <strong>clicca su tutte quelle che ti servono</strong>. 
+                     Vedrai apparire dei numeri blu <strong>(1, 2, 3...)</strong> sulle card selezionate.
+                     Quando hai finito, chiudi la finestra e verranno aggiunte tutte insieme nella tua griglia, nell'ordine in cui le hai scelte.
+                  </p>
+               </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+              <div className="p-3 bg-white dark:bg-slate-700 rounded-lg border dark:border-slate-600 flex flex-col gap-1">
+                <span className="font-bold text-blue-600 dark:text-blue-400">Arasaac & Wiki</span>
+                <span>Simboli standard e foto reali.</span>
               </div>
-              <div className="p-3 bg-white dark:bg-slate-700 rounded-xl border dark:border-slate-600">
-                <div className="font-bold mb-1 text-emerald-600 dark:text-emerald-400">Foto Reali</div>
-                Ricerca automatica su Wikimedia (foto vere).
+              <div className="p-3 bg-white dark:bg-slate-700 rounded-lg border dark:border-slate-600 flex flex-col gap-1">
+                <span className="font-bold text-purple-600 dark:text-purple-400">I Miei Progetti</span>
+                <span>Copia velocemente simboli da altri comunicatori che hai già creato.</span>
               </div>
-              <div className="p-3 bg-white dark:bg-slate-700 rounded-xl border dark:border-slate-600">
-                <div className="font-bold mb-1 text-orange-600 dark:text-orange-400">Predefiniti</div>
-                Icone vettoriali (stelle, cuori, razzi) pronte all'uso.
-              </div>
-              <div className="p-3 bg-white dark:bg-slate-700 rounded-xl border dark:border-slate-600">
-                <div className="font-bold mb-1 text-purple-600 dark:text-purple-400">Galleria</div>
-                Carica le tue foto dal dispositivo.
-              </div>
-              <div className="p-3 bg-white dark:bg-slate-700 rounded-xl border dark:border-slate-600">
-                <div className="font-bold mb-1 text-slate-600 dark:text-slate-400">Web / Google</div>
-                Copia-incolla link di immagini da internet.
+              <div className="p-3 bg-white dark:bg-slate-700 rounded-lg border dark:border-slate-600 flex flex-col gap-1">
+                <span className="font-bold text-orange-600 dark:text-orange-400">Galleria & Web</span>
+                <span>Carica foto dal tuo dispositivo o incolla link da Google.</span>
               </div>
             </div>
           </section>
 
-          {/* 5. GESTIONE DATI */}
-          <section>
-            <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-4 border-b pb-2 dark:border-slate-700">
-              4. Gestione e Backup
-            </h4>
-            <div className="space-y-3 text-sm">
-              <div className="flex items-center gap-3">
-                <MoreVertical className="w-4 h-4 text-slate-400" />
-                <span>
-                  Nella Dashboard, usa i tre puntini sulle card per <strong>Duplicare</strong> un progetto o cambiare l'<strong>Immagine di Copertina</strong> per riconoscerlo subito.
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <Download className="w-4 h-4 text-blue-500" />
-                <span>
-                  <strong>Esporta (Backup):</strong> Scarica un file unico con tutti i tuoi lavori e le immagini. Utile per cambiare computer o fare copie di sicurezza.
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <UploadIcon className="w-4 h-4 text-green-500" />
-                <span>
-                  <strong>Importa:</strong> Ripristina un backup. <em>Attenzione: sovrascrive i dati attuali!</em>
-                </span>
-              </div>
-            </div>
+          {/* 4. GESTIONE DATI */}
+          <section className="bg-slate-50 dark:bg-slate-900/30 p-4 rounded-xl">
+             <div className="flex items-center gap-2 mb-2 font-bold text-slate-700 dark:text-slate-300">
+                <Save className="w-4 h-4"/> Salvataggio e Backup
+             </div>
+             <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                L'app salva tutto in automatico nel tuo dispositivo. Tuttavia, è buona norma fare dei backup.
+             </p>
+             <div className="flex gap-4 text-xs font-medium">
+                <span className="flex items-center gap-1 text-blue-600"><Download className="w-3 h-3"/> Esporta Backup (file .json)</span>
+                <span className="flex items-center gap-1 text-green-600"><UploadIcon className="w-3 h-3"/> Importa Backup</span>
+             </div>
           </section>
 
         </div>
         
         {/* Footer */}
-        <div className="p-4 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
-          <p className="text-xs text-slate-400">
-            Le immagini vengono salvate nel browser e funzionano anche offline.
-          </p>
-          <button onClick={onClose} className="px-6 py-2.5 bg-slate-900 dark:bg-blue-600 text-white rounded-xl font-bold hover:shadow-lg hover:scale-105 transition-all">
+        <div className="p-4 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-end">
+          <button onClick={onClose} className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 hover:shadow-lg hover:scale-105 transition-all">
             Ho capito, iniziamo!
           </button>
         </div>
@@ -1392,6 +1379,7 @@ export default function App() {
   const fileInputRef = useRef(null); 
   const [showHelp, setShowHelp] = useState(false);
   const [activeItemId, setActiveItemId] = useState(null); // NUOVO STATO
+  const [dropIndicator, setDropIndicator] = useState({ index: null, position: null }); // { index: 0, position: 'before' | 'after' }
 
   const handleChildClick = (itemId) => {
     setActiveItemId(itemId);
@@ -1678,19 +1666,124 @@ export default function App() {
     return currentBoard.items || [];
   };
 
+  // --- DRAG & DROP LOGIC (AGGIORNATA) ---
   const dragItem = useRef();
   const dragOverItem = useRef();
-  const handleDragStart = (e, position) => { dragItem.current = position; };
-  const handleDragEnter = (e, position) => { dragOverItem.current = position; };
+  const dragOverPage = useRef(); // NUOVO: Serve per capire se siamo sopra una pagina
+
+  const handleDragStart = (e, position) => { 
+    dragItem.current = position; 
+    // Opzionale: Effetto visivo di trascinamento
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragEnter = (e, position) => { 
+    dragOverItem.current = position; 
+    dragOverPage.current = null; // Resetta pagina se siamo su un item
+  };
+
+  // NUOVO: Gestisce quando trascini sopra una linguetta pagina
+  const handleDragEnterPage = (e, pageId) => {
+    e.preventDefault(); // Necessario per permettere il drop
+    dragOverPage.current = pageId;
+    dragOverItem.current = null; // Resetta item se siamo su una pagina
+  };
+
+// Calcola se mostrare la riga PRIMA o DOPO l'elemento
+  const handleDragOver = (e, index) => {
+    e.preventDefault(); // Fondamentale per permettere il drop
+    
+    // Se stiamo trascinando sopra una pagina (tab), non mostrare indicatori item
+    if (dragOverPage.current) {
+        setDropIndicator({ index: null, position: null });
+        return;
+    }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const isVertical = currentBoard.type === 'sequence' && currentBoard.settings.orientation === 'vertical';
+    
+    // Calcoliamo il punto medio
+    const midpoint = isVertical 
+      ? rect.y + rect.height / 2 
+      : rect.x + rect.width / 2;
+    
+    // Calcoliamo la posizione del cursore/dito
+    const clientPos = isVertical ? e.clientY : e.clientX;
+
+    const position = clientPos < midpoint ? 'before' : 'after';
+    
+    // Aggiorniamo solo se è cambiato (per performance)
+    if (dropIndicator.index !== index || dropIndicator.position !== position) {
+      setDropIndicator({ index, position });
+      dragOverItem.current = index; // Teniamo aggiornato anche il ref classico
+    }
+  };
+
+  // Reset quando usciamo
+  const handleDragLeave = () => {
+    // Non resettiamo subito altrimenti la riga lampeggia, 
+    // il reset vero avviene nel DragEnd o se entriamo in un altro item
+  };
+  
   const handleDragEnd = (e) => {
-    if (currentBoard.type === 'grid' || isLocked) return;
-    const items = [...currentBoard.items];
-    const dragItemContent = items[dragItem.current];
-    items.splice(dragItem.current, 1);
-    items.splice(dragOverItem.current, 0, dragItemContent);
+    setDropIndicator({ index: null, position: null }); // Pulisci la riga blu
+
+    if (isLocked) return;
+
+    // Logica spostamento tra pagine (rimane uguale a prima)
+    if (dragOverPage.current && currentBoard.type === 'grid') {
+       // ... (copia la logica precedente per le pagine, non cambia) ...
+       const items = [...getActiveItems()];
+       const targetPageId = dragOverPage.current;
+       if (currentBoard.pages[activePageIndex].id === targetPageId) return;
+       const itemToMove = items[dragItem.current];
+       
+       setCurrentBoard(prev => {
+        const copy = { ...prev };
+        copy.pages[activePageIndex].items.splice(dragItem.current, 1);
+        const targetPage = copy.pages.find(p => p.id === targetPageId);
+        if (targetPage) targetPage.items.push(itemToMove);
+        return copy;
+      });
+      return;
+    }
+
+    // NUOVA LOGICA RIORDINAMENTO PRECISO CON LINEA
+    if (dragOverItem.current !== null && dragOverItem.current !== undefined) {
+      const items = [...getActiveItems()];
+      const oldIndex = dragItem.current;
+      const hoverIndex = dragOverItem.current;
+      const position = dropIndicator.position || 'after'; // Fallback
+
+      // Rimuovi l'elemento dalla vecchia posizione
+      const [movedItem] = items.splice(oldIndex, 1);
+
+      // Calcola il nuovo indice
+      // Attenzione: se togliamo un elemento prima del target, gli indici scalano
+      let newIndex = hoverIndex;
+      
+      // Aggiustamenti matematici per array
+      if (oldIndex < hoverIndex) {
+        newIndex = position === 'after' ? hoverIndex : hoverIndex - 1; 
+      } else {
+        newIndex = position === 'after' ? hoverIndex + 1 : hoverIndex;
+      }
+      
+      // Inserisci nella nuova posizione
+      items.splice(newIndex, 0, movedItem);
+      
+      setCurrentBoard(prev => {
+        const copy = { ...prev };
+        if (copy.type === 'grid') copy.pages[activePageIndex].items = items;
+        else copy.items = items;
+        return copy;
+      });
+    }
+
+    // Reset References
     dragItem.current = null;
     dragOverItem.current = null;
-    setCurrentBoard(prev => ({ ...prev, items }));
+    dragOverPage.current = null;
   };
 
   const activeItems = getActiveItems(); 
@@ -1715,6 +1808,19 @@ export default function App() {
     
     const style = document.createElement('style');
     style.innerHTML = `
+      /* --- FIX FLUIDITÀ DRAG AND DROP ANDROID --- */
+      .dnd-poly-drag-image {
+        opacity: 0.9 !important;
+        transform: translate3d(0,0,0) !important; /* Forza GPU */
+        will-change: transform;
+        transition: none !important; /* Nessun ritardo */
+        z-index: 9999 !important;
+      }
+      
+      /* Nasconde l'icona originale mentre trascini per evitare "doppioni" */
+      .dnd-poly-drag-source {
+        opacity: 0.3 !important;
+      }
       @media print {
         @page { 
           margin: 0; 
@@ -1758,6 +1864,7 @@ export default function App() {
         
         /* Forza colori e sfondi */
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
       }
     `;
     document.head.appendChild(style);
@@ -1924,7 +2031,32 @@ export default function App() {
               {currentBoard.type === 'grid' && (
                 <div className="flex gap-2 overflow-x-auto pb-1 border-t dark:border-slate-700 pt-4">
                   {currentBoard.pages.map((page, index) => (
-                    <div key={page.id} onClick={() => setActivePageIndex(index)} className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer whitespace-nowrap border ${activePageIndex === index ? 'bg-blue-50 border-blue-200 text-blue-700 font-bold' : 'bg-white text-slate-600 hover:bg-slate-50'}`}><span>{page.name}</span>{!isLocked && currentBoard.pages.length > 1 && <X className="w-3 h-3 hover:text-red-500 ml-1" onClick={(e) => { e.stopPropagation(); if(confirm('Eliminare pagina?')) setCurrentBoard(p => { const c = {...p}; c.pages.splice(index,1); return c; }); setActivePageIndex(0); }} />}</div>
+                    <div 
+                      key={page.id} 
+                      onClick={() => setActivePageIndex(index)} 
+                      
+                      // --- NUOVI EVENTI PER IL DROP SU PAGINA ---
+                      onDragEnter={(e) => handleDragEnterPage(e, page.id)}
+                      onDragOver={(e) => e.preventDefault()} // Necessario per HTML5 DnD
+                      // ------------------------------------------
+
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer whitespace-nowrap border transition-all 
+                        ${activePageIndex === index 
+                          ? 'bg-blue-50 border-blue-200 text-blue-700 font-bold' 
+                          : 'bg-white text-slate-600 hover:bg-slate-50 border-transparent hover:border-blue-300' // Feedback visivo hover
+                        }`}
+                    >
+                      <span>{page.name}</span>
+                      {!isLocked && currentBoard.pages.length > 1 && (
+                        <X className="w-3 h-3 hover:text-red-500 ml-1" 
+                           onClick={(e) => { 
+                             e.stopPropagation(); 
+                             if(confirm('Eliminare pagina?')) setCurrentBoard(p => { const c = {...p}; c.pages.splice(index,1); return c; }); 
+                             setActivePageIndex(0); 
+                           }} 
+                        />
+                      )}
+                    </div>
                   ))}
                   {!isLocked && <button onClick={() => { const name = prompt('Nome pagina:'); if(name) setCurrentBoard(p => ({...p, pages: [...p.pages, {id:crypto.randomUUID(), name, items:[]}]}))}} className="flex items-center gap-1 px-3 py-2 text-slate-500 hover:text-blue-600 text-sm font-medium"><FilePlus className="w-4 h-4" /> Nuova Pagina</button>}
                 </div>
@@ -2206,47 +2338,76 @@ export default function App() {
               )}
 
               {/* Render Standard per Grid e Sequence */}
-              {(currentBoard.type === 'grid' || currentBoard.type === 'sequence') && activeItems.length > 0 && (
+              {(currentBoard.type === 'grid' || currentBoard.type === 'sequence') && (
                 currentBoard.type === 'grid' ? (
                   <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    {activeItems.map(item => (
-                      <PictogramCard 
-                        key={item.id} 
-                        item={item} 
-                        mode="grid" 
-                        isLocked={isLocked} 
+                    {activeItems.map((item, index) => (
+                      <div
+                        key={item.id}
+                        draggable={!isLocked}
+                        onDragStart={(e) => handleDragStart(e, index)}
+                        // USARE IL NUOVO GESTORE
+                        onDragOver={(e) => handleDragOver(e, index)} 
+                        onDragEnd={handleDragEnd}
+                        className={`relative ${!isLocked ? 'cursor-grab active:cursor-grabbing hover:scale-[1.02] transition-transform' : ''}`}
+                      >
+                        {/* --- INDICATORE LINEA BLU (GRID) --- */}
+                        {!isLocked && dropIndicator.index === index && (
+                          <div className={`absolute z-50 bg-blue-500 rounded-full shadow-md pointer-events-none
+                            ${dropIndicator.position === 'before' ? '-left-3' : '-right-3'}
+                            top-0 bottom-0 w-1.5 h-full`} 
+                          />
+                        )}
+                        {/* ----------------------------------- */}
                         
-                        // NUOVE PROPS PER HIGHLIGHT
-                        isActive={activeItemId === item.id}
-                        onClick={handleChildClick}
-                        
-                        onRemove={removeItem} 
-                        onReplaceImage={(id) => { setEditingContext({type:'item', id}); setShowSearch(true); }} 
-                        onEditLabel={updateLabel} 
-                      />
+                        <PictogramCard 
+                          item={item} 
+                          mode="grid" 
+                          isLocked={isLocked} 
+                          isActive={activeItemId === item.id}
+                          onClick={handleChildClick}
+                          onRemove={removeItem} 
+                          onReplaceImage={(id) => { setEditingContext({type:'item', id}); setShowSearch(true); }} 
+                          onEditLabel={updateLabel} 
+                        />
+                      </div>
                     ))}
                   </div>
                 ) : (
-                  // ... (Sequenza/Agenda rimane simile, aggiungi le props se vuoi evidenziare anche lì)
                   <div className={`${currentBoard.settings?.orientation === 'vertical' ? 'flex flex-col gap-4 w-full max-w-md mx-auto' : 'flex gap-4 overflow-x-auto pb-6 pt-2 snap-x px-2 h-full items-center w-full'}`}>
                     {activeItems.map((item, index) => (
-                      <div key={item.id} draggable={!isLocked} onDragStart={(e) => handleDragStart(e, index)} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={handleDragEnd} onDragOver={(e) => e.preventDefault()} className={`${currentBoard.settings?.orientation === 'vertical' ? 'w-full' : 'snap-center'}`}>
+                      <div 
+                        key={item.id} 
+                        draggable={!isLocked} 
+                        onDragStart={(e) => handleDragStart(e, index)} 
+                        onDragOver={(e) => handleDragOver(e, index)} 
+                        onDragEnd={handleDragEnd} 
+                        className={`relative ${currentBoard.settings?.orientation === 'vertical' ? 'w-full' : 'snap-center'}`}
+                      >
+                         {/* --- INDICATORE LINEA BLU (SEQUENCE) --- */}
+                         {!isLocked && dropIndicator.index === index && (
+                           <div className={`absolute z-50 bg-blue-500 rounded-full shadow-md pointer-events-none
+                             ${currentBoard.settings?.orientation === 'vertical' 
+                                ? (dropIndicator.position === 'before' ? '-top-3 left-0 right-0 h-1.5 w-full' : '-bottom-3 left-0 right-0 h-1.5 w-full') // Orizzontale per lista vert.
+                                : (dropIndicator.position === 'before' ? '-left-3 top-0 bottom-0 w-1.5 h-full' : '-right-3 top-0 bottom-0 w-1.5 h-full') // Verticale per lista orizz.
+                             }`} 
+                           />
+                         )}
+                         {/* --------------------------------------- */}
+
                         <PictogramCard 
                            item={item} 
                            mode="sequence" 
                            orientation={currentBoard.settings?.orientation} 
                            isLocked={isLocked} 
-                           
-                           // NUOVE PROPS
                            isActive={activeItemId === item.id}
                            onClick={handleChildClick}
-                           
                            onRemove={removeItem} 
                            onReplaceImage={(id) => { setEditingContext({type:'item', id}); setShowSearch(true); }} 
                            onEditLabel={updateLabel} 
                            onToggleComplete={toggleComplete} 
                         />
-                        {/* ... frecce ... */}
+                        {index < activeItems.length - 1 && <div className="flex justify-center p-2 text-slate-300">{currentBoard.settings?.orientation === 'vertical' ? <ArrowDown className="w-6 h-6"/> : <ArrowRight className="w-6 h-6"/>}</div>}
                       </div>
                     ))}
                   </div>
@@ -2266,7 +2427,7 @@ export default function App() {
       />
         {/* AGGIUNGI QUESTO: */}
       <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
-        
+
     </div>
   );
 }
