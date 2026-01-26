@@ -2,7 +2,7 @@
   "name": "caa-facile",
   "private": true,
   "version": "1.0.0",
-  "description": "App di CAA per la comunicazione aumentativa",  // <--- AGGIUNGI QUESTO
+  "description": "App di CAA per la comunicazione aumentativa",
   "author": "Il Tuo Nome",
   "main": "electron-main.js",
   "scripts": {
