@@ -1,59 +1,17 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
-  Plus, 
-  Search, 
-  Save, 
-  Image as ImageIcon, 
-  Trash2, 
-  ArrowLeft, 
-  Moon, 
-  Sun, 
-  LayoutGrid, 
-  ListOrdered, 
-  CheckCircle2, 
-  X, 
-  Upload,
-  Settings,
-  Copy,
-  ArrowDown,
-  ArrowRight,
-  FilePlus,
-  Lock,
-  Unlock,
-  RotateCcw,
+  Plus, Search, Save, Image as ImageIcon, Trash2, ArrowLeft, Moon, Sun, 
+  LayoutGrid, ListOrdered, CheckCircle2, X, Upload, Settings, Copy, 
+  ArrowDown, ArrowRight, FilePlus, Lock, Unlock, 
+  RotateCcw,             // Icona normale
+  RotateCcw as ResetIcon, // <--- ECCO IL FIX: Creiamo l'alias per il Timer
   Link as LinkIcon,
-  Trophy,
-  Star,
-  Globe,
-  MoreVertical,
-  Filter,
-  SortAsc,
-  SortDesc,
-  Edit3,
-  Heart,
-  ThumbsUp,
-  Smile,
-  Zap,
-  Crown,
-  Medal,
-  Rocket,
-  Music,
-  Car,
-  Cat,
-  Dog,
-  Flower,
-  Palette,
-  Download,
-  Upload as UploadIcon,
-  Camera,
-  HelpCircle,
-  Scissors, // Nuovo
-  Printer,  // Nuovo
-  Book,
-  Wand2, // Aggiungi questa icona per l'AI
-  Crop as CropIcon, // Aggiungi questa icona
-  Layers,
-  BookOpen
+  Trophy, Star, Globe, MoreVertical, Filter, SortAsc, SortDesc, Edit3, 
+  Heart, ThumbsUp, Smile, Zap, Crown, Medal, Rocket, Music, Car, Cat, Dog, 
+  Flower, Palette, Download, Upload as UploadIcon, Camera, HelpCircle, 
+  Scissors, Printer, Book, Wand2, Crop as CropIcon, Layers, BookOpen,
+  Timer, Play, Pause, Volume2, ChevronUp, 
+  ChevronDown // Icone per il Timer e Suono
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { removeBackground } from "@imgly/background-removal";
@@ -76,35 +34,58 @@ const DB_NAME = 'CaaAppDB';
 const DB_VERSION = 1;
 
 // Mappa delle icone predefinite con stili coordinati (Sfondo, Bordo, Icona)
+// Mappa delle icone predefinite con stili coordinati (Sfondo, Bordo, Icona, RGB per timer)
 const PRESET_ICONS = [
-  { id: 'star', label: 'Stella', icon: Star, 
+  { id: 'star', label: 'Stella', icon: Star, rgb: {r:245, g:158, b:11}, // Amber
     style: { bg: 'bg-amber-100', border: 'border-amber-400', icon: 'text-amber-500 fill-amber-400' } },
-  { id: 'heart', label: 'Cuore', icon: Heart, 
+  { id: 'heart', label: 'Cuore', icon: Heart, rgb: {r:239, g:68, b:68}, // Red
     style: { bg: 'bg-red-100', border: 'border-red-400', icon: 'text-red-500 fill-red-500' } },
-  { id: 'thumbsup', label: 'Super', icon: ThumbsUp, 
+  { id: 'thumbsup', label: 'Super', icon: ThumbsUp, rgb: {r:37, g:99, b:235}, // Blue
     style: { bg: 'bg-blue-100', border: 'border-blue-400', icon: 'text-blue-600 fill-blue-400' } },
-  { id: 'smile', label: 'Sorriso', icon: Smile, 
+  { id: 'smile', label: 'Sorriso', icon: Smile, rgb: {r:202, g:138, b:4}, // Yellow
     style: { bg: 'bg-yellow-100', border: 'border-yellow-400', icon: 'text-yellow-600 fill-yellow-200' } },
-  { id: 'crown', label: 'Re/Regina', icon: Crown, 
+  { id: 'crown', label: 'Re/Regina', icon: Crown, rgb: {r:147, g:51, b:234}, // Purple
     style: { bg: 'bg-purple-100', border: 'border-purple-400', icon: 'text-purple-600 fill-purple-400' } },
-  { id: 'trophy', label: 'Coppa', icon: Trophy, 
+  { id: 'trophy', label: 'Coppa', icon: Trophy, rgb: {r:234, g:179, b:8}, // Yellow-500
     style: { bg: 'bg-yellow-50', border: 'border-yellow-500', icon: 'text-yellow-600 fill-yellow-400' } },
-  { id: 'medal', label: 'Medaglia', icon: Medal, 
+  { id: 'medal', label: 'Medaglia', icon: Medal, rgb: {r:249, g:115, b:22}, // Orange
     style: { bg: 'bg-orange-100', border: 'border-orange-400', icon: 'text-orange-600 fill-orange-400' } },
-  { id: 'rocket', label: 'Razzo', icon: Rocket, 
+  { id: 'rocket', label: 'Razzo', icon: Rocket, rgb: {r:79, g:70, b:229}, // Indigo
     style: { bg: 'bg-indigo-100', border: 'border-indigo-400', icon: 'text-indigo-600 fill-indigo-400' } },
-  { id: 'zap', label: 'Fulmine', icon: Zap, 
+  { id: 'zap', label: 'Fulmine', icon: Zap, rgb: {r:234, g:179, b:8}, // Yellow
     style: { bg: 'bg-yellow-100', border: 'border-yellow-400', icon: 'text-yellow-500 fill-yellow-500' } },
-  { id: 'flower', label: 'Fiore', icon: Flower, 
+  { id: 'flower', label: 'Fiore', icon: Flower, rgb: {r:236, g:72, b:153}, // Pink
     style: { bg: 'bg-pink-100', border: 'border-pink-400', icon: 'text-pink-500 fill-pink-400' } },
-  { id: 'cat', label: 'Gatto', icon: Cat, 
+  { id: 'cat', label: 'Gatto', icon: Cat, rgb: {r:120, g:113, b:108}, // Stone
     style: { bg: 'bg-stone-200', border: 'border-stone-400', icon: 'text-stone-600 fill-stone-400' } },
-  { id: 'dog', label: 'Cane', icon: Dog, 
+  { id: 'dog', label: 'Cane', icon: Dog, rgb: {r:146, g:64, b:14}, // Amber-800
     style: { bg: 'bg-amber-200', border: 'border-amber-600', icon: 'text-amber-800 fill-amber-700' } },
-  { id: 'car', label: 'Auto', icon: Car, 
+  { id: 'car', label: 'Auto', icon: Car, rgb: {r:220, g:38, b:38}, // Red
     style: { bg: 'bg-red-50', border: 'border-red-500', icon: 'text-red-600 fill-red-600' } },
-  { id: 'music', label: 'Musica', icon: Music, 
+  { id: 'music', label: 'Musica', icon: Music, rgb: {r:14, g:165, b:233}, // Sky
     style: { bg: 'bg-sky-100', border: 'border-sky-400', icon: 'text-sky-600 fill-sky-400' } },
+];
+
+// Preset per il Timer (Secondi)
+const TIMER_PRESETS = [
+  { label: '1 min', seconds: 60 },
+  { label: '3 min', seconds: 180 },
+  { label: '5 min', seconds: 300 },
+  { label: '10 min', seconds: 600 },
+  { label: '15 min', seconds: 900 },
+  { label: '30 min', seconds: 1800 },
+];
+
+const TIMER_SOUNDS = [
+  { id: 'digital', label: 'Beep Digitale', url: 'https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg' },
+  { id: 'classic', label: 'Sveglia Classica', url: 'https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg' },
+  { id: 'kitchen', label: 'Timer Cucina', url: 'https://actions.google.com/sounds/v1/alarms/mechanical_clock_ring.ogg' },
+  { id: 'school', label: 'Campanella', url: 'https://cdn.freesound.org/previews/337/337000_3232293-lq.mp3' },
+  { id: 'phone', label: 'Telefono Retro', url: 'https://actions.google.com/sounds/v1/alarms/phone_alert.ogg' },
+  { id: 'bell_chime', label: 'Suono Dolce', url: 'https://actions.google.com/sounds/v1/cartoon/magic_chime.ogg' },
+  { id: 'arcade', label: 'Arcade', url: 'https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg' },
+  { id: 'whistle', label: 'Fischio', url: 'https://actions.google.com/sounds/v1/cartoon/slide_whistle.ogg' },
+  { id: 'gong', label: 'Gong', url: 'https://cdn.freesound.org/previews/536/536774_11739077-lq.mp3' },
 ];
 
 const getPresetStyle = (iconId) => {
@@ -141,26 +122,32 @@ const quickSearchArasaac = async (word) => {
 const getDominantColor = async (imageUrl) => {
   return new Promise((resolve) => {
     const img = new Image();
-    // FIX IMPORTANTE: Applichiamo 'Anonymous' SOLO se l'immagine viene dal web.
-    // Se è un blob locale o base64, NON mettiamo crossOrigin, altrimenti Android blocca tutto.
-    if (imageUrl && !imageUrl.startsWith('blob:') && !imageUrl.startsWith('data:')) {
-      img.crossOrigin = "Anonymous";
-    }
+    img.crossOrigin = "Anonymous";
     img.src = imageUrl;
     img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = 1;
-        canvas.height = 1;
-        ctx.drawImage(img, 0, 0, 1, 1);
-        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-        resolve({ r, g, b });
-      } catch (e) {
-        resolve(null);
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = 50; 
+      canvas.height = 50;
+      ctx.drawImage(img, 0, 0, 50, 50);
+      const data = ctx.getImageData(0, 0, 50, 50).data;
+      
+      let r = 0, g = 0, b = 0, count = 0;
+
+      for (let i = 0; i < data.length; i += 4) {
+        // Ignoriamo i pixel trasparenti (Alpha < 128)
+        if (data[i+3] > 128) { 
+          r += data[i];
+          g += data[i+1];
+          b += data[i+2];
+          count++;
+        }
       }
+
+      if (count === 0) resolve({ r: 240, g: 240, b: 240 });
+      else resolve({ r: r/count, g: g/count, b: b/count });
     };
-    img.onerror = () => resolve(null);
+    img.onerror = () => resolve({ r: 200, g: 200, b: 200 });
   });
 };
 
@@ -447,12 +434,11 @@ const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableS
 
       // B. Carichiamo il processore
       const processor = await AutoProcessor.from_pretrained(modelId, {
-        local_files_only: true,
-        config: {
-            do_normalize: true,
-            do_pad: false,
-            do_rescale: true,
-            do_resize: true,
+    local_files_only: true,
+    config: {
+        do_normalize: true,
+        do_pad: true, // Cambiato in true per gestire meglio i riquadri bianchi esterni
+        do_rescale: true,
             image_mean: [0.5, 0.5, 0.5],
             feature_extractor_type: "ImageFeatureExtractor",
             image_std: [1, 1, 1],
@@ -691,6 +677,7 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
   };
 
   // --- SELEZIONE FINALE ---
+  // --- IN SEARCHMODAL: handleSelect (Versione Pulita) ---
   const handleSelect = async (item, source) => {
     if (source !== 'boardItem' && source !== 'preset') setLoading(true);
     
@@ -707,7 +694,6 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
       sourceId = `wiki-${item._id}`;
       await cacheArasaacImage(imageUrl, sourceId); 
     } else if (source === 'boardItem') {
-       // Qui item.imageUrl è quello "fresco" generato dallo useEffect
        imageUrl = item.imageUrl; 
        sourceId = item.sourceId;
        dominantColor = item.dominantColor;
@@ -1169,7 +1155,7 @@ const PictogramCard = ({
 };
 
 // --- HELP MODAL COMPONENT ---
-// --- HELP MODAL COMPONENT (AGGIORNATO CON NUOVE ISTRUZIONI) ---
+// --- HELP MODAL COMPONENT (COMPLETO CON ISTRUZIONI TIMER) ---
 const HelpModal = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
@@ -1185,7 +1171,7 @@ const HelpModal = ({ isOpen, onClose }) => {
             </div>
             <div>
               <h3 className="text-xl font-bold text-slate-900 dark:text-white">Manuale Istruzioni</h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Guida alle funzionalità v1.2</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Guida alle funzionalità v1.3</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors">
@@ -1240,6 +1226,14 @@ const HelpModal = ({ isOpen, onClose }) => {
                 </div>
                 <p className="text-xs leading-relaxed opacity-80">
                   Crea griglie di etichette su misura (cm) da stampare e ritagliare.
+                </p>
+              </div>
+              <div className="p-4 rounded-xl bg-cyan-50/50 dark:bg-slate-700/30 border border-cyan-100 dark:border-slate-600">
+                <div className="flex items-center gap-2 mb-2 text-cyan-700 dark:text-cyan-300 font-bold">
+                  <Timer className="w-5 h-5" /> Timer Visivo
+                </div>
+                <p className="text-xs leading-relaxed opacity-80">
+                  Conto alla rovescia "liquido" per rendere tangibile il passaggio del tempo.
                 </p>
               </div>
             </div>
@@ -1333,13 +1327,36 @@ const HelpModal = ({ isOpen, onClose }) => {
             </div>
           </section>
 
-          {/* 4. GESTIONE DATI */}
+          {/* 4. TIMER VISIVO */}
+          <section>
+            <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-4 border-b pb-2 dark:border-slate-700">
+              4. Timer Visivo
+            </h4>
+            <div className="bg-cyan-50 dark:bg-cyan-900/20 p-4 rounded-xl border border-cyan-100 dark:border-cyan-800 space-y-3">
+               <p className="text-sm text-slate-700 dark:text-slate-300">
+                 Strumento fondamentale per gestire le attese e i turni. Il tempo è rappresentato da un "liquido" che si svuota, rendendo il concetto astratto del tempo visibile e concreto.
+               </p>
+               <ul className="text-sm space-y-2 text-slate-600 dark:text-slate-300 list-disc pl-4">
+                  <li>
+                    <strong>Imposta il Tempo:</strong> Clicca direttamente sui numeri del display (es. "05") per scrivere i minuti o i secondi con la tastiera, oppure usa le freccette e i tasti rapidi (es. +10s, 5 min).
+                  </li>
+                  <li>
+                    <strong>Scegli il Suono:</strong> Dal menu a tendina in alto, seleziona il suono che verrà riprodotto allo scadere del tempo (es. Campanella, Beep, Telefono).
+                  </li>
+                  <li>
+                    <strong>Immagine Motivante:</strong> Clicca al centro del cerchio liquido per scegliere un'immagine o un'icona (es. il premio finale o l'attività successiva). L'immagine verrà rivelata man mano che il tempo passa.
+                  </li>
+               </ul>
+            </div>
+          </section>
+
+          {/* 5. GESTIONE DATI */}
           <section className="bg-slate-50 dark:bg-slate-900/30 p-4 rounded-xl">
              <div className="flex items-center gap-2 mb-2 font-bold text-slate-700 dark:text-slate-300">
                 <Save className="w-4 h-4"/> Salvataggio e Backup
              </div>
              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                L'app salva tutto in automatico nel tuo dispositivo. Tuttavia, è buona norma fare dei backup.
+                L'app salva tutto in automatico nel tuo dispositivo. Tuttavia, è buona norma fare dei backup regolari.
              </p>
              <div className="flex gap-4 text-xs font-medium">
                 <span className="flex items-center gap-1 text-blue-600"><Download className="w-3 h-3"/> Esporta Backup (file .json)</span>
@@ -1355,6 +1372,295 @@ const HelpModal = ({ isOpen, onClose }) => {
             Ho capito, iniziamo!
           </button>
         </div>
+      </div>
+    </div>
+  );
+};
+
+// --- COMPONENTE TIMER VISIVO AVANZATO (FIX LOOP E POSIZIONE) ---
+// --- SOTTOCOMPONENTE INPUT (Definito FUORI per evitare problemi di focus) ---
+const TimeInput = ({ value, onChange, onFocus, onBlur, label, type, onArrowClick }) => {
+  return (
+    <div className="flex flex-col items-center gap-1 group">
+       {/* Freccia Su */}
+       <button 
+         onClick={() => onArrowClick(type, 1)} 
+         className="w-full h-5 flex items-center justify-center rounded-t-md bg-slate-100 hover:bg-blue-100 text-slate-400 hover:text-blue-600 transition-colors opacity-0 group-hover:opacity-100"
+       >
+         <ChevronUp className="w-3 h-3"/>
+       </button>
+       
+       {/* Campo Input */}
+       <div className="relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-1 py-2 rounded-lg w-[4.5rem] text-center shadow-sm focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all">
+          <input 
+            type="text"
+            inputMode="numeric"
+            value={value}
+            onFocus={onFocus}
+            onChange={(e) => onChange(type, e.target.value)}
+            onBlur={onBlur}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+            className="w-full bg-transparent text-center text-3xl font-mono font-bold text-slate-700 dark:text-white outline-none appearance-none p-0 leading-none placeholder-slate-200"
+            placeholder="00"
+            autoComplete="off"
+          />
+          <span className="absolute top-1/2 -translate-y-1/2 -right-2 text-slate-300 font-bold text-xl pointer-events-none">{label}</span>
+       </div>
+
+       {/* Freccia Giù */}
+       <button 
+         onClick={() => onArrowClick(type, -1)} 
+         className="w-full h-5 flex items-center justify-center rounded-b-md bg-slate-100 hover:bg-blue-100 text-slate-400 hover:text-blue-600 transition-colors opacity-0 group-hover:opacity-100"
+       >
+         <ChevronDown className="w-3 h-3"/>
+       </button>
+    </div>
+  );
+};
+
+// --- COMPONENTE TIMER VISIVO PRINCIPALE ---
+const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
+  const [timeLeft, setTimeLeft] = useState(settings.duration || 60);
+  const [isActive, setIsActive] = useState(false);
+  const [isRinging, setIsRinging] = useState(false);
+  
+  // --- STATI INPUT INDIPENDENTI ---
+  const [inputMin, setInputMin] = useState("01");
+  const [inputSec, setInputSec] = useState("00");
+  const [activeField, setActiveField] = useState(null); // 'min', 'sec' o null
+
+  // Input per nuovi preset (in basso)
+  const [newMin, setNewMin] = useState("");
+  const [newSec, setNewSec] = useState("");
+  
+  const audioRef = useRef(null);
+  const isDark = document.documentElement.classList.contains('dark');
+  const presets = settings.presets || [60, 180, 300, 600];
+
+  const getProgressColor = (pct) => {
+    if (pct > 50) return 'bg-emerald-500';
+    if (pct > 20) return 'bg-yellow-400';
+    return 'bg-red-500';
+  };
+
+  const getBackgroundColor = () => {
+    let color = null;
+    if (settings.timerImage?.iconId) {
+      const preset = PRESET_ICONS.find(p => p.id === settings.timerImage.iconId);
+      if (preset && preset.rgb) color = preset.rgb;
+    } else if (settings.timerImage?.dominantColor) {
+      color = settings.timerImage.dominantColor;
+    }
+    if (color) return `rgba(${color.r}, ${color.g}, ${color.b}, 0.15)`;
+    return isDark ? '#1e293b' : '#f1f5f9';
+  };
+
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current.loop = false;
+    }
+    setIsRinging(false);
+  };
+
+  // 1. MOTORE DEL TIMER (Solo logic)
+  useEffect(() => {
+    let interval = null;
+    if (isActive && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft(prev => prev - 1);
+      }, 1000);
+    } else if (timeLeft === 0 && isActive) {
+      setIsActive(false);
+      setIsRinging(true);
+      if (audioRef.current) {
+        const soundId = settings.soundId || 'beep';
+        const soundObj = TIMER_SOUNDS.find(s => s.id === soundId) || TIMER_SOUNDS[0];
+        audioRef.current.src = soundObj.url;
+        audioRef.current.loop = true;
+        audioRef.current.play().catch(e => console.log("Audio blocked", e));
+      }
+    }
+    return () => clearInterval(interval);
+  }, [isActive, timeLeft, settings.soundId]);
+
+  // 2. SINCRONIZZAZIONE UNIDIREZIONALE (Timer -> Input)
+  // Aggiorna gli input SOLO se l'utente NON sta scrivendo
+  useEffect(() => {
+    if (activeField === null) {
+      const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
+      const s = (timeLeft % 60).toString().padStart(2, '0');
+      setInputMin(m);
+      setInputSec(s);
+    }
+  }, [timeLeft, activeField]);
+
+  // 3. AGGIORNAMENTO MANUALE (Input -> Stato Locale)
+  const handleInputChange = (field, value) => {
+    if (!/^\d{0,2}$/.test(value)) return; // Accetta solo 2 cifre
+    if (field === 'min') setInputMin(value);
+    else setInputSec(value);
+  };
+
+  // 4. COMMIT (Input -> Timer) - Quando esci dal campo
+  const commitTime = () => {
+    const m = parseInt(inputMin || "0", 10);
+    const s = parseInt(inputSec || "0", 10);
+    const newTotal = (m * 60) + s;
+    
+    setTimeLeft(newTotal);
+    if (!isActive) onUpdateSettings('duration', newTotal);
+    setActiveField(null); // Rilascia il lock
+  };
+
+  // Gestione Frecce
+  const handleArrowClick = (field, direction) => {
+    let m = parseInt(inputMin || "0", 10);
+    let s = parseInt(inputSec || "0", 10);
+
+    if (field === 'min') {
+      m = Math.max(0, m + direction);
+    } else {
+      s = s + direction;
+      if (s > 59) { s = 0; m++; }
+      if (s < 0) { if (m > 0) { s = 59; m--; } else s = 0; }
+    }
+    
+    const newTotal = (m * 60) + s;
+    setTimeLeft(newTotal);
+    if (!isActive) onUpdateSettings('duration', newTotal);
+  };
+
+  const manualUpdateTime = (newTotal) => {
+    const val = Math.max(0, newTotal);
+    setTimeLeft(val);
+    if (!isActive) onUpdateSettings('duration', val);
+  };
+
+  const toggleTimer = () => { if (isRinging) stopAudio(); else setIsActive(!isActive); };
+  const resetTimer = () => { stopAudio(); setIsActive(false); setTimeLeft(settings.duration || 60); };
+  
+  const addPreset = () => {
+    const m = parseInt(newMin) || 0;
+    const s = parseInt(newSec) || 0;
+    const total = (m * 60) + s;
+    if (total > 0) {
+      onUpdateSettings('presets', [...presets, total].sort((a,b) => a-b));
+      setNewMin(""); setNewSec("");
+    }
+  };
+
+  const percentage = Math.min(100, (timeLeft / (settings.duration || 1)) * 100);
+
+  return (
+    <div className="flex flex-col items-center w-full max-w-4xl mx-auto p-4 animate-in fade-in">
+      <audio ref={audioRef} preload="auto" />
+      
+      {/* HEADER CONTROLLI */}
+      <div className="w-full bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 mb-8 flex flex-col gap-6">
+        <div className="flex flex-wrap justify-between items-center gap-6">
+           {/* GRUPPO CONTROLLO TEMPO */}
+           <div className="flex items-center gap-6 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-2xl border border-slate-100 dark:border-slate-700">
+              <div className="flex gap-4 pr-4 border-r border-slate-200 dark:border-slate-700">
+                 <TimeInput 
+                    value={inputMin} 
+                    type="min" 
+                    label=":" 
+                    onFocus={() => setActiveField('min')}
+                    onBlur={commitTime}
+                    onChange={handleInputChange}
+                    onArrowClick={handleArrowClick}
+                 />
+                 <TimeInput 
+                    value={inputSec} 
+                    type="sec" 
+                    label="" 
+                    onFocus={() => setActiveField('sec')}
+                    onBlur={commitTime}
+                    onChange={handleInputChange}
+                    onArrowClick={handleArrowClick}
+                 />
+              </div>
+              <div className="flex gap-2">
+                 <button onClick={toggleTimer} className={`w-14 h-14 rounded-2xl shadow-lg flex items-center justify-center transition-all active:scale-95 ${isActive ? 'bg-amber-100 text-amber-600 hover:bg-amber-200' : isRinging ? 'bg-red-600 text-white animate-bounce' : 'bg-green-500 text-white hover:bg-green-600'}`}>
+                    {isRinging || isActive ? <Pause className="w-7 h-7 fill-current"/> : <Play className="w-7 h-7 fill-current ml-1"/>}
+                 </button>
+                 <button onClick={resetTimer} className="w-14 h-14 bg-white dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 border border-slate-200 dark:border-slate-600 rounded-2xl flex items-center justify-center transition-colors">
+                    <ResetIcon className="w-6 h-6"/>
+                 </button>
+              </div>
+           </div>
+
+           {/* OPZIONI RAPIDE */}
+           <div className="flex flex-col items-end gap-2 ml-auto">
+             <div className="flex items-center gap-2 bg-white dark:bg-slate-800 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                <Volume2 className="w-4 h-4 text-slate-400 ml-2"/>
+                <select value={settings.soundId || 'beep'} onChange={(e) => onUpdateSettings('soundId', e.target.value)} className="bg-transparent text-sm font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer py-1 pr-2 max-w-[140px]">
+                  {TIMER_SOUNDS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                </select>
+             </div>
+             <div className="flex items-center gap-1">
+               <button onClick={() => manualUpdateTime(Math.max(0, timeLeft - 10))} className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100 border border-red-100 transition-colors">-10s</button>
+               <button onClick={() => manualUpdateTime(timeLeft + 10)} className="px-3 py-1.5 bg-green-50 text-green-600 rounded-lg text-xs font-bold hover:bg-green-100 border border-green-100 transition-colors">+10s</button>
+             </div>
+           </div>
+        </div>
+        
+        {/* PRESET */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
+           {presets.map(p => (
+             <div key={p} className="relative group shrink-0">
+                <button onClick={() => { stopAudio(); setIsActive(false); manualUpdateTime(p); }} className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white transition-all shadow-sm min-w-[60px]">
+                  {Math.floor(p / 60)}:{(p % 60).toString().padStart(2, '0')}
+                </button>
+                <button onClick={() => onUpdateSettings('presets', presets.filter(val => val !== p))} className="absolute -top-1.5 -right-1.5 bg-white text-red-500 border border-red-100 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm z-10"><X className="w-3 h-3"/></button>
+             </div>
+           ))}
+           <div className="w-px h-8 bg-slate-200 mx-1"></div>
+           <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 p-1 rounded-lg border border-slate-200">
+               <input type="number" placeholder="M" value={newMin} onChange={(e) => setNewMin(e.target.value)} className="w-8 bg-transparent text-center font-bold outline-none text-xs" />
+               <span className="text-slate-300 text-xs">:</span>
+               <input type="number" placeholder="S" value={newSec} onChange={(e) => setNewSec(e.target.value)} className="w-8 bg-transparent text-center font-bold outline-none text-xs" />
+               <button onClick={addPreset} className="p-1.5 bg-blue-100 text-blue-600 rounded-md hover:bg-blue-600 hover:text-white transition-colors"><Plus className="w-3 h-3"/></button>
+           </div>
+        </div>
+      </div>
+
+      {/* BOCCIA LIQUIDA */}
+      <div 
+        className="relative w-80 h-80 sm:w-[450px] sm:h-[450px] rounded-full border-[12px] border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden flex items-center justify-center transition-all duration-700"
+        style={{ backgroundColor: getBackgroundColor() }}
+      >
+         {/* 1. Immagine Sotto */}
+         <div className="absolute inset-0 flex items-center justify-center p-20 z-0 cursor-pointer" onClick={onSelectImage}>
+            {settings.timerImage ? (
+                settings.timerImage.imageUrl ? <img src={settings.timerImage.imageUrl} className="w-full h-full object-contain animate-in fade-in zoom-in duration-500 drop-shadow-md"/> : 
+                settings.timerImage.iconId ? (() => { const IconComp = getIconComponent(settings.timerImage.iconId); const style = getPresetStyle(settings.timerImage.iconId); return <IconComp className={`w-40 h-40 ${style.icon} filter drop-shadow-sm`} />; })() : null
+            ) : (
+               <div className="flex flex-col items-center text-slate-300 dark:text-slate-600 transition-colors hover:text-blue-400"><ImageIcon className="w-20 h-20 mb-2 opacity-50"/><span className="text-xs font-bold uppercase tracking-widest">Tocca per immagine</span></div>
+            )}
+         </div>
+
+         {/* 2. Liquido Coprente */}
+         <div 
+           className={`liquid-container ${getProgressColor(percentage)}`} 
+           style={{ height: `${percentage}%` }} 
+         >
+            {percentage > 0.5 && percentage < 99.5 && (
+              <>
+                <div className="wave wave-back"></div>
+                <div className="wave wave-front"></div>
+              </>
+            )}
+         </div>
+
+         {/* 3. Countdown */}
+         {isActive && (
+            <div className="absolute z-30 font-black text-6xl text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] opacity-90 pointer-events-none">
+               {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
+            </div>
+         )}
       </div>
     </div>
   );
@@ -1423,6 +1729,80 @@ export default function App() {
     setBoards(boardsWithCovers);
   };
 
+  // --- SNAPSHOT SYSTEM (AUTO-SAVE) ---
+  
+  // 1. Salva automaticamente ogni volta che currentBoard cambia
+  useEffect(() => {
+    if (currentBoard) {
+      // Usiamo un timeout per non salvare ad ogni singola lettera digitata (Debounce 1s)
+      const timeoutId = setTimeout(() => {
+        // Salviamo solo i metadati, le immagini Blob non si possono salvare in localStorage.
+        // Ma va bene così! Al ripristino useremo gli ID per ricaricarle dal DB.
+        localStorage.setItem('caa_snapshot_board', JSON.stringify(currentBoard));
+        localStorage.setItem('caa_snapshot_page', activePageIndex);
+        localStorage.setItem('caa_snapshot_view', view);
+        localStorage.setItem('caa_snapshot_date', new Date().toISOString());
+      }, 1000);
+      return () => clearTimeout(timeoutId);
+    } else if (view === 'dashboard') {
+        localStorage.removeItem('caa_snapshot_board');
+    }
+  }, [currentBoard, activePageIndex, view]);
+
+  // 2. Ripristino all'avvio (Check Snapshot)
+  useEffect(() => {
+    const checkSnapshot = async () => {
+      const savedBoard = localStorage.getItem('caa_snapshot_board');
+      if (savedBoard) {
+        try {
+          const parsedBoard = JSON.parse(savedBoard);
+          const savedDate = new Date(localStorage.getItem('caa_snapshot_date'));
+          const diffMins = (new Date() - savedDate) / 1000 / 60;
+
+          // Se lo snapshot è recente (meno di 24 ore) chiediamo, altrimenti ignoriamo
+          if (diffMins < 1440) {
+             if (confirm(`Ho trovato un progetto aperto non salvato ("${parsedBoard.title}"). Vuoi ripristinarlo?`)) {
+                
+                // CRUCIALE: Reidratiamo le immagini dal DB IndexedDB
+                // perché i Blob URL del localStorage sono morti.
+                const rehydrate = async (board) => {
+                    const refreshItems = async (items) => Promise.all((items || []).map(async (item) => ({ 
+                        ...item, 
+                        imageUrl: await getImageUrl(item.sourceId) 
+                    })));
+
+                    if (board.items) board.items = await refreshItems(board.items);
+                    if (board.pages) board.pages = await Promise.all(board.pages.map(async p => ({...p, items: await refreshItems(p.items)})));
+                    
+                    // Gestione immagini speciali (Token, Timer, Cover)
+                    if (board.settings?.tokenImage?.sourceId) board.settings.tokenImage.imageUrl = await getImageUrl(board.settings.tokenImage.sourceId);
+                    if (board.settings?.rewardImage?.sourceId) board.settings.rewardImage.imageUrl = await getImageUrl(board.settings.rewardImage.sourceId);
+                    if (board.settings?.timerImage?.sourceId) board.settings.timerImage.imageUrl = await getImageUrl(board.settings.timerImage.sourceId);
+                    
+                    return board;
+                };
+
+                const hydratedBoard = await rehydrate(parsedBoard);
+                
+                setCurrentBoard(hydratedBoard);
+                setActivePageIndex(Number(localStorage.getItem('caa_snapshot_page')) || 0);
+                setView('editor');
+             } else {
+               // Se dice no, puliamo
+               localStorage.removeItem('caa_snapshot_board');
+             }
+          }
+        } catch (e) {
+          console.error("Errore ripristino snapshot", e);
+          localStorage.removeItem('caa_snapshot_board');
+        }
+      }
+    };
+    
+    // Eseguiamo il controllo dopo un breve ritardo per non bloccare il render iniziale
+    setTimeout(checkSnapshot, 500);
+  }, []);
+
   const exportData = async () => {
     try {
       const boardsData = await dbOperations.getAllBoards();
@@ -1484,18 +1864,18 @@ export default function App() {
     const newBoard = {
       title: type === 'sequence' ? 'Nuova Agenda' : 
              type === 'token' ? 'Token Economy' : 
-             type === 'story' ? 'Nuova Storia Sociale' : // Nuovo
-             type === 'pecs' ? 'Griglia PECS da Stampare' : // Nuovo
+             type === 'story' ? 'Nuova Storia Sociale' : 
+             type === 'pecs' ? 'Griglia PECS' :
+             type === 'timer' ? 'Nuovo Timer Visivo' : // <--- NUOVO
              'Nuova Comunicazione',
       type: type,
-      // Grid e Pecs usano la struttura a pagine, le altre liste piatte
       pages: (type === 'grid' || type === 'pecs') ? [{ id: crypto.randomUUID(), name: 'Pagina 1', items: [] }] : undefined,
       items: (type === 'sequence' || type === 'story') ? [] : undefined,
-      // Aggiungi printOrientation alle settings della storia
       settings: type === 'sequence' ? { orientation: 'vertical' } : 
                 type === 'token' ? { tokenCount: 5, earnedCount: 0, linkedScheduleId: '', tokenImage: null, rewardImage: null } : 
                 type === 'pecs' ? { cardWidth: 4, cardHeight: 4, gap: 0, showCutLines: true, labelPosition: 'bottom' } :
-                type === 'story' ? { printOrientation: 'portrait' } : // Nuovo default
+                type === 'story' ? { printOrientation: 'portrait' } : 
+                type === 'timer' ? { duration: 60, timerImage: null } : // <--- NUOVO
                 {},
       updatedAt: new Date()
     };
@@ -1567,31 +1947,65 @@ export default function App() {
     setOpenMenuId(null);
   };
 
-  const handleSearchSelect = async (newItemData) => {
-    // Determiniamo se siamo in modalità "Sostituzione" (Edit) o "Aggiunta" (Add)
+// --- IN APP: handleSearchSelect (Versione Finale Corretta) ---
+  const handleSearchSelect = async (selectedData) => {
+    // Gestiamo sia il caso di un singolo oggetto che di un array (selezione multipla)
+    const itemsToAdd = Array.isArray(selectedData) ? selectedData : [selectedData];
+    const firstItem = itemsToAdd[0];
+
+    // Determiniamo se stiamo sostituendo un elemento esistente
     const isReplacing = editingContext?.type === 'boardCover' || 
                         editingContext?.type === 'tokenImage' || 
                         editingContext?.type === 'rewardImage' || 
+                        editingContext?.type === 'timerImage' || 
                         (editingContext?.type === 'item' && editingContext.id);
 
     if (editingContext?.type === 'boardCover') {
       const boardToUpdate = await dbOperations.getBoard(editingContext.boardId);
       if (boardToUpdate) {
-        boardToUpdate.coverImage = newItemData;
+        boardToUpdate.coverImage = firstItem;
         await dbOperations.updateBoard(boardToUpdate);
         await loadBoards();
       }
     } else if (editingContext?.type === 'tokenImage') {
-      setCurrentBoard(prev => ({ ...prev, settings: { ...prev.settings, tokenImage: newItemData } }));
+      setCurrentBoard(prev => ({ 
+        ...prev, 
+        settings: { ...prev.settings, tokenImage: firstItem } 
+      }));
     } else if (editingContext?.type === 'rewardImage') {
-       setCurrentBoard(prev => ({ ...prev, settings: { ...prev.settings, rewardImage: newItemData } }));
+       setCurrentBoard(prev => ({ 
+         ...prev, 
+         settings: { ...prev.settings, rewardImage: firstItem } 
+       }));
+    } else if (editingContext?.type === 'timerImage') {
+      const itemToSave = Array.isArray(selectedData) ? selectedData[0] : selectedData;
+      
+      // Calcolo colore dominante sicuro (fallback se manca)
+      const domColor = itemToSave.dominantColor || { r: 240, g: 240, b: 240 };
+
+      setCurrentBoard(prev => ({ 
+        ...prev, 
+        settings: { 
+          ...prev.settings, 
+          timerImage: {
+            ...itemToSave,
+            id: itemToSave.id || crypto.randomUUID(), // Assicuriamo un ID
+            imageUrl: itemToSave.imageUrl,
+            iconId: itemToSave.iconId, // FONDAMENTALE per i preset
+            dominantColor: domColor    // Salviamo il colore per lo sfondo
+          } 
+        } 
+      }));
+      setEditingContext(null);
+      setShowSearch(false);
     } else if (editingContext?.type === 'item' && editingContext.id) {
+      // Sostituzione di un singolo simbolo in griglia o agenda
       setCurrentBoard(prev => {
         const copy = { ...prev };
         const updateFn = (item) => item.id === editingContext.id ? { 
           ...item, 
-          ...newItemData, 
-          label: item.label // Manteniamo la label originale in modifica
+          ...firstItem, 
+          label: item.label // Mantiene l'etichetta originale durante la sostituzione immagine
         } : item;
         
         if (copy.type === 'grid') copy.pages[activePageIndex].items = copy.pages[activePageIndex].items.map(updateFn);
@@ -1599,28 +2013,25 @@ export default function App() {
         return copy;
       });
     } else {
-      // --- MODALITÀ AGGIUNTA (Nuovi elementi) ---
+      // --- MODALITÀ AGGIUNTA (Supporta Multi-Selezione) ---
       setCurrentBoard(prev => {
         const copy = { ...prev };
         if (copy.type === 'grid') {
-          copy.pages[activePageIndex].items.push(newItemData);
-        } else if (copy.type === 'sequence' || copy.type === 'story' || copy.type === 'pecs') {
+          if (!copy.pages[activePageIndex].items) copy.pages[activePageIndex].items = [];
+          copy.pages[activePageIndex].items.push(...itemsToAdd);
+        } else {
           if (!copy.items) copy.items = [];
-          copy.items.push(newItemData);
+          copy.items.push(...itemsToAdd);
         }
         return copy;
       });
     }
 
-    // LOGICA DI CHIUSURA INTELLIGENTE:
-    // Chiudiamo il modale SOLO se stavamo sostituendo un'immagine specifica.
-    // Se stavamo aggiungendo, lo lasciamo aperto per permettere inserimenti multipli.
+    // Reset del contesto e chiusura ricerca se abbiamo finito la sostituzione
     if (isReplacing) {
       setEditingContext(null);
       setShowSearch(false);
     }
-    // Se siamo in modalità aggiunta, NON facciamo nulla qui. 
-    // Il SearchModal gestirà il feedback visivo (spunta verde) autonomamente.
   };
 
   const removeItem = (itemId) => {
@@ -1803,6 +2214,7 @@ export default function App() {
   }, [boards, dashboardFilter, dashboardSearch, dashboardSort]);
 
 // Stili per la stampa e visualizzazione PECS (DINAMICO & AGGRESSIVO)
+  // Stili per la stampa e visualizzazione PECS (E ANIMAZIONE TIMER)
   useEffect(() => {
     const orientation = currentBoard?.settings?.printOrientation || 'portrait';
     
@@ -1811,33 +2223,23 @@ export default function App() {
       /* --- FIX FLUIDITÀ DRAG AND DROP ANDROID --- */
       .dnd-poly-drag-image {
         opacity: 0.9 !important;
-        transform: translate3d(0,0,0) !important; /* Forza GPU */
+        transform: translate3d(0,0,0) !important;
         will-change: transform;
-        transition: none !important; /* Nessun ritardo */
+        transition: none !important;
         z-index: 9999 !important;
       }
-      
-      /* Nasconde l'icona originale mentre trascini per evitare "doppioni" */
       .dnd-poly-drag-source {
         opacity: 0.3 !important;
       }
+
+      /* --- STILI DI STAMPA --- */
       @media print {
         @page { 
           margin: 0; 
           size: A4 ${orientation}; 
         }
-        
-        /* 1. NASCONDI TUTTO DI DEFAULT */
-        body * {
-          visibility: hidden;
-        }
-
-        /* 2. RENDI VISIBILE SOLO IL CONTENUTO DI STAMPA E I SUOI FIGLI */
-        .print-only-content, .print-only-content * {
-          visibility: visible;
-        }
-
-        /* 3. POSIZIONAMENTO ASSOLUTO PER COPRIRE L'INTERFACCIA */
+        body * { visibility: hidden; }
+        .print-only-content, .print-only-content * { visibility: visible; }
         .print-only-content {
           position: absolute !important;
           left: 0 !important;
@@ -1849,8 +2251,6 @@ export default function App() {
           box-shadow: none !important;
           border: none !important;
         }
-
-        /* 4. SETUP GENERALE */
         html, body { 
           height: 100%; 
           margin: 0 !important; 
@@ -1858,13 +2258,76 @@ export default function App() {
           background: white !important; 
           overflow: visible !important;
         }
-        
-        /* 5. FIX SPECIFICI */
         .print\\:hidden { display: none !important; }
-        
-        /* Forza colori e sfondi */
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      } /* <--- QUESTA CHIUSURA ERA MESSA NEL POSTO SBAGLIATO PRIMA */
 
+      /* --- FIX INPUT NUMERICI (Nasconde frecce default) --- */
+      input[type=number]::-webkit-inner-spin-button, 
+      input[type=number]::-webkit-outer-spin-button { 
+        -webkit-appearance: none; 
+        margin: 0; 
+      }
+      input[type=number] {
+        -moz-appearance: textfield;
+      }
+
+      /* --- TIMER VISIVO LIQUIDO (FIX DEFINITIVO GAP - OVERLAP 10PX) --- */
+      
+      @keyframes wave-front {
+        0% { transform: translate3d(0, 10px, 0); }   /* Spinto giù di 10px dentro il liquido */
+        50% { transform: translate3d(-25%, 15px, 0); } /* Oscilla tra 10px e 15px */
+        100% { transform: translate3d(-50%, 10px, 0); }
+      }
+
+      @keyframes wave-back {
+        0% { transform: translate3d(0, 10px, 0); }
+        50% { transform: translate3d(-25%, 5px, 0); } /* Oscilla tra 10px e 5px */
+        100% { transform: translate3d(-50%, 10px, 0); }
+      }
+
+      .liquid-container {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        /* Transizione fluida */
+        transition: height 1s linear, background-color 0.5s ease;
+        z-index: 10;
+        pointer-events: none;
+      }
+
+      .wave {
+        position: absolute;
+        bottom: 100%; 
+        left: 0;
+        width: 200%;
+        height: 60px; 
+        background-color: inherit; 
+        
+        /* Non usiamo margin-bottom, usiamo il transform nell'animazione */
+        
+        /* Maschera Sinusoidale */
+        -webkit-mask-image: url('data:image/svg+xml;utf8,<svg viewBox="0 0 1000 100" xmlns="http://www.w3.org/2000/svg"><path d="M0 100 V 50 Q 250 10 500 50 T 1000 50 V 100 H 0 Z" fill="black"/></svg>');
+        mask-image: url('data:image/svg+xml;utf8,<svg viewBox="0 0 1000 100" xmlns="http://www.w3.org/2000/svg"><path d="M0 100 V 50 Q 250 10 500 50 T 1000 50 V 100 H 0 Z" fill="black"/></svg>');
+        
+        -webkit-mask-size: 50% 100%;
+        mask-size: 50% 100%;
+        -webkit-mask-repeat: repeat-x;
+        mask-repeat: repeat-x;
+        -webkit-mask-position: bottom;
+        mask-position: bottom;
+      }
+
+      .wave-back {
+        opacity: 0.7; /* Opacità alta per coprire bene */
+        animation: wave-back 7s linear infinite;
+        height: 65px; /* Onda dietro più alta */
+      }
+
+      .wave-front {
+        opacity: 1; /* Opaca al 100% per coprire la giuntura */
+        animation: wave-front 4s linear infinite;
       }
     `;
     document.head.appendChild(style);
@@ -1927,6 +2390,10 @@ export default function App() {
                 <button onClick={() => createBoard('pecs')} className="group flex flex-col items-center p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border-2 border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-all w-44">
                   <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl text-indigo-600 mb-3 group-hover:scale-110 transition-transform"><Scissors className="w-8 h-8" /></div>
                   <span className="font-bold text-slate-700 dark:text-slate-200">Costruttore PECS</span>
+                </button>
+                <button onClick={() => createBoard('timer')} className="group flex flex-col items-center p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border-2 border-slate-200 dark:border-slate-700 hover:border-cyan-500 transition-all w-44">
+                  <div className="p-3 bg-cyan-100 dark:bg-cyan-900/30 rounded-xl text-cyan-600 mb-3 group-hover:scale-110 transition-transform"><Timer className="w-8 h-8" /></div>
+                  <span className="font-bold text-slate-700 dark:text-slate-200">Timer Visivo</span>
                 </button>
               </div>
             </section>
@@ -2064,6 +2531,14 @@ export default function App() {
             </div>
 
             <div className={`min-h-[60vh] p-4 rounded-2xl bg-slate-100 dark:bg-slate-900/50 border-2 ${isLocked ? 'border-transparent' : 'border-dashed border-slate-200 dark:border-slate-700'} ${getActiveItems().length === 0 && currentBoard.type !== 'token' ? 'flex items-center justify-center' : ''}`}>
+              {/* --- RENDERER TIMER VISIVO --- */}
+              {currentBoard.type === 'timer' && (
+                <VisualTimer 
+                   settings={currentBoard.settings}
+                   onUpdateSettings={(key, val) => setCurrentBoard(prev => ({...prev, settings: {...prev.settings, [key]: val}}))}
+                   onSelectImage={() => { setEditingContext({type: 'timerImage'}); setShowSearch(true); }}
+                />
+              )}
               {currentBoard.type === 'token' && (
                 <div className={`flex flex-col md:flex-row h-full gap-6 ${linkedSchedule ? 'justify-between' : 'justify-center'}`}>
                   {linkedSchedule && (
