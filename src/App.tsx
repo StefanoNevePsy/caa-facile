@@ -1419,17 +1419,18 @@ const TimeInput = ({ value, onChange, onFocus, onBlur, label, type, onArrowClick
 };
 
 // --- COMPONENTE TIMER VISIVO PRINCIPALE ---
+// --- COMPONENTE TIMER VISIVO AVANZATO (FIX LOOP ONDA & NO RIGA) ---
 const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
   const [timeLeft, setTimeLeft] = useState(settings.duration || 60);
   const [isActive, setIsActive] = useState(false);
   const [isRinging, setIsRinging] = useState(false);
   
-  // --- STATI INPUT INDIPENDENTI ---
+  // Stati Input
   const [inputMin, setInputMin] = useState("01");
   const [inputSec, setInputSec] = useState("00");
-  const [activeField, setActiveField] = useState(null); // 'min', 'sec' o null
+  const [activeField, setActiveField] = useState(null);
 
-  // Input per nuovi preset (in basso)
+  // Input Preset custom
   const [newMin, setNewMin] = useState("");
   const [newSec, setNewSec] = useState("");
   
@@ -1437,10 +1438,11 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
   const isDark = document.documentElement.classList.contains('dark');
   const presets = settings.presets || [60, 180, 300, 600];
 
-  const getProgressColor = (pct) => {
-    if (pct > 50) return 'bg-emerald-500';
-    if (pct > 20) return 'bg-yellow-400';
-    return 'bg-red-500';
+  // Helper per ottenere il colore HEX esatto (cruciale per SVG fill)
+  const getProgressColorHex = (pct) => {
+    if (pct > 50) return '#10b981'; // emerald-500
+    if (pct > 20) return '#facc15'; // yellow-400
+    return '#ef4444';             // red-500
   };
 
   const getBackgroundColor = () => {
@@ -1464,13 +1466,11 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
     setIsRinging(false);
   };
 
-  // 1. MOTORE DEL TIMER (Solo logic)
+  // TICKER
   useEffect(() => {
     let interval = null;
     if (isActive && timeLeft > 0) {
-      interval = setInterval(() => {
-        setTimeLeft(prev => prev - 1);
-      }, 1000);
+      interval = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
     } else if (timeLeft === 0 && isActive) {
       setIsActive(false);
       setIsRinging(true);
@@ -1485,8 +1485,7 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
     return () => clearInterval(interval);
   }, [isActive, timeLeft, settings.soundId]);
 
-  // 2. SINCRONIZZAZIONE UNIDIREZIONALE (Timer -> Input)
-  // Aggiorna gli input SOLO se l'utente NON sta scrivendo
+  // SYNC INPUT
   useEffect(() => {
     if (activeField === null) {
       const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
@@ -1496,37 +1495,26 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
     }
   }, [timeLeft, activeField]);
 
-  // 3. AGGIORNAMENTO MANUALE (Input -> Stato Locale)
   const handleInputChange = (field, value) => {
-    if (!/^\d{0,2}$/.test(value)) return; // Accetta solo 2 cifre
+    if (!/^\d{0,2}$/.test(value)) return;
     if (field === 'min') setInputMin(value);
     else setInputSec(value);
   };
 
-  // 4. COMMIT (Input -> Timer) - Quando esci dal campo
   const commitTime = () => {
     const m = parseInt(inputMin || "0", 10);
     const s = parseInt(inputSec || "0", 10);
     const newTotal = (m * 60) + s;
-    
     setTimeLeft(newTotal);
     if (!isActive) onUpdateSettings('duration', newTotal);
-    setActiveField(null); // Rilascia il lock
+    setActiveField(null);
   };
 
-  // Gestione Frecce
   const handleArrowClick = (field, direction) => {
     let m = parseInt(inputMin || "0", 10);
     let s = parseInt(inputSec || "0", 10);
-
-    if (field === 'min') {
-      m = Math.max(0, m + direction);
-    } else {
-      s = s + direction;
-      if (s > 59) { s = 0; m++; }
-      if (s < 0) { if (m > 0) { s = 59; m--; } else s = 0; }
-    }
-    
+    if (field === 'min') { m = Math.max(0, m + direction); } 
+    else { s = s + direction; if (s > 59) { s = 0; m++; } if (s < 0) { if (m > 0) { s = 59; m--; } else s = 0; } }
     const newTotal = (m * 60) + s;
     setTimeLeft(newTotal);
     if (!isActive) onUpdateSettings('duration', newTotal);
@@ -1552,63 +1540,49 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
   };
 
   const percentage = Math.min(100, (timeLeft / (settings.duration || 1)) * 100);
+  const currentColor = getProgressColorHex(percentage); 
 
   return (
-    <div className="flex flex-col items-center w-full max-w-4xl mx-auto p-4 animate-in fade-in">
+    <div className="flex flex-col items-center w-full max-w-4xl mx-auto p-2 md:p-4 animate-in fade-in">
       <audio ref={audioRef} preload="auto" />
       
-      {/* HEADER CONTROLLI */}
-      <div className="w-full bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 mb-8 flex flex-col gap-6">
-        <div className="flex flex-wrap justify-between items-center gap-6">
-           {/* GRUPPO CONTROLLO TEMPO */}
-           <div className="flex items-center gap-6 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-2xl border border-slate-100 dark:border-slate-700">
-              <div className="flex gap-4 pr-4 border-r border-slate-200 dark:border-slate-700">
-                 <TimeInput 
-                    value={inputMin} 
-                    type="min" 
-                    label=":" 
-                    onFocus={() => setActiveField('min')}
-                    onBlur={commitTime}
-                    onChange={handleInputChange}
-                    onArrowClick={handleArrowClick}
-                 />
-                 <TimeInput 
-                    value={inputSec} 
-                    type="sec" 
-                    label="" 
-                    onFocus={() => setActiveField('sec')}
-                    onBlur={commitTime}
-                    onChange={handleInputChange}
-                    onArrowClick={handleArrowClick}
-                 />
+      {/* HEADER CONTROLLI (Responsive) */}
+      <div className="w-full bg-white dark:bg-slate-800 p-4 md:p-6 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 mb-6 md:mb-8 flex flex-col gap-4 md:gap-6">
+        
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4 md:gap-6">
+           {/* Gruppo Input Tempo + Play */}
+           <div className="flex items-center gap-3 md:gap-6 bg-slate-50 dark:bg-slate-900/50 p-2 md:p-3 rounded-2xl border border-slate-100 dark:border-slate-700 w-full md:w-auto justify-center md:justify-start">
+              <div className="flex gap-2 md:gap-4 pr-2 md:pr-4 border-r border-slate-200 dark:border-slate-700">
+                 <TimeInput value={inputMin} type="min" label=":" onFocus={() => setActiveField('min')} onBlur={commitTime} onChange={handleInputChange} onArrowClick={handleArrowClick}/>
+                 <TimeInput value={inputSec} type="sec" label="" onFocus={() => setActiveField('sec')} onBlur={commitTime} onChange={handleInputChange} onArrowClick={handleArrowClick}/>
               </div>
               <div className="flex gap-2">
-                 <button onClick={toggleTimer} className={`w-14 h-14 rounded-2xl shadow-lg flex items-center justify-center transition-all active:scale-95 ${isActive ? 'bg-amber-100 text-amber-600 hover:bg-amber-200' : isRinging ? 'bg-red-600 text-white animate-bounce' : 'bg-green-500 text-white hover:bg-green-600'}`}>
-                    {isRinging || isActive ? <Pause className="w-7 h-7 fill-current"/> : <Play className="w-7 h-7 fill-current ml-1"/>}
+                 <button onClick={toggleTimer} className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl shadow-lg flex items-center justify-center transition-all active:scale-95 ${isActive ? 'bg-amber-100 text-amber-600' : isRinging ? 'bg-red-600 text-white animate-bounce' : 'bg-green-500 text-white'}`}>
+                    {isRinging || isActive ? <Pause className="w-6 h-6 fill-current"/> : <Play className="w-6 h-6 fill-current ml-1"/>}
                  </button>
-                 <button onClick={resetTimer} className="w-14 h-14 bg-white dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 border border-slate-200 dark:border-slate-600 rounded-2xl flex items-center justify-center transition-colors">
+                 <button onClick={resetTimer} className="w-12 h-12 md:w-14 md:h-14 bg-white dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-600 rounded-2xl flex items-center justify-center">
                     <ResetIcon className="w-6 h-6"/>
                  </button>
               </div>
            </div>
 
-           {/* OPZIONI RAPIDE */}
-           <div className="flex flex-col items-end gap-2 ml-auto">
-             <div className="flex items-center gap-2 bg-white dark:bg-slate-800 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+           {/* Opzioni */}
+           <div className="flex flex-col md:items-end gap-3 w-full md:w-auto">
+             <div className="flex items-center justify-center md:justify-end gap-2 bg-white dark:bg-slate-800 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm w-full md:w-auto">
                 <Volume2 className="w-4 h-4 text-slate-400 ml-2"/>
-                <select value={settings.soundId || 'beep'} onChange={(e) => onUpdateSettings('soundId', e.target.value)} className="bg-transparent text-sm font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer py-1 pr-2 max-w-[140px]">
+                <select value={settings.soundId || 'beep'} onChange={(e) => onUpdateSettings('soundId', e.target.value)} className="bg-transparent text-sm font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer py-1 pr-2 w-full md:w-auto text-center md:text-left">
                   {TIMER_SOUNDS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                 </select>
              </div>
-             <div className="flex items-center gap-1">
-               <button onClick={() => manualUpdateTime(Math.max(0, timeLeft - 10))} className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100 border border-red-100 transition-colors">-10s</button>
-               <button onClick={() => manualUpdateTime(timeLeft + 10)} className="px-3 py-1.5 bg-green-50 text-green-600 rounded-lg text-xs font-bold hover:bg-green-100 border border-green-100 transition-colors">+10s</button>
+             <div className="flex items-center justify-center md:justify-end gap-2 w-full">
+               <button onClick={() => manualUpdateTime(Math.max(0, timeLeft - 10))} className="flex-1 md:flex-none px-3 py-2 bg-red-50 text-red-600 rounded-lg text-xs font-bold border border-red-100">-10s</button>
+               <button onClick={() => manualUpdateTime(timeLeft + 10)} className="flex-1 md:flex-none px-3 py-2 bg-green-50 text-green-600 rounded-lg text-xs font-bold border border-green-100">+10s</button>
              </div>
            </div>
         </div>
         
-        {/* PRESET */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
+        {/* Preset */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide w-full">
            {presets.map(p => (
              <div key={p} className="relative group shrink-0">
                 <button onClick={() => { stopAudio(); setIsActive(false); manualUpdateTime(p); }} className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white transition-all shadow-sm min-w-[60px]">
@@ -1617,8 +1591,8 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
                 <button onClick={() => onUpdateSettings('presets', presets.filter(val => val !== p))} className="absolute -top-1.5 -right-1.5 bg-white text-red-500 border border-red-100 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm z-10"><X className="w-3 h-3"/></button>
              </div>
            ))}
-           <div className="w-px h-8 bg-slate-200 mx-1"></div>
-           <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 p-1 rounded-lg border border-slate-200">
+           <div className="w-px h-8 bg-slate-200 mx-1 shrink-0"></div>
+           <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 p-1 rounded-lg border border-slate-200 shrink-0">
                <input type="number" placeholder="M" value={newMin} onChange={(e) => setNewMin(e.target.value)} className="w-8 bg-transparent text-center font-bold outline-none text-xs" />
                <span className="text-slate-300 text-xs">:</span>
                <input type="number" placeholder="S" value={newSec} onChange={(e) => setNewSec(e.target.value)} className="w-8 bg-transparent text-center font-bold outline-none text-xs" />
@@ -1627,37 +1601,41 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
         </div>
       </div>
 
-      {/* BOCCIA LIQUIDA */}
+      {/* BOCCIA LIQUIDA (FIX LOOP SVG) */}
       <div 
-        className="relative w-80 h-80 sm:w-[450px] sm:h-[450px] rounded-full border-[12px] border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden flex items-center justify-center transition-all duration-700"
+        className="relative w-72 h-72 sm:w-[450px] sm:h-[450px] rounded-full border-[12px] border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden flex items-center justify-center transition-all duration-700 bg-white dark:bg-slate-900"
         style={{ backgroundColor: getBackgroundColor() }}
       >
          {/* 1. Immagine Sotto */}
-         <div className="absolute inset-0 flex items-center justify-center p-20 z-0 cursor-pointer" onClick={onSelectImage}>
+         <div className="absolute inset-0 flex items-center justify-center p-16 z-0 cursor-pointer" onClick={onSelectImage}>
             {settings.timerImage ? (
                 settings.timerImage.imageUrl ? <img src={settings.timerImage.imageUrl} className="w-full h-full object-contain animate-in fade-in zoom-in duration-500 drop-shadow-md"/> : 
-                settings.timerImage.iconId ? (() => { const IconComp = getIconComponent(settings.timerImage.iconId); const style = getPresetStyle(settings.timerImage.iconId); return <IconComp className={`w-40 h-40 ${style.icon} filter drop-shadow-sm`} />; })() : null
+                settings.timerImage.iconId ? (() => { const IconComp = getIconComponent(settings.timerImage.iconId); const style = getPresetStyle(settings.timerImage.iconId); return <IconComp className={`w-32 h-32 md:w-40 md:h-40 ${style.icon} filter drop-shadow-sm`} />; })() : null
             ) : (
-               <div className="flex flex-col items-center text-slate-300 dark:text-slate-600 transition-colors hover:text-blue-400"><ImageIcon className="w-20 h-20 mb-2 opacity-50"/><span className="text-xs font-bold uppercase tracking-widest">Tocca per immagine</span></div>
+               <div className="flex flex-col items-center text-slate-300 dark:text-slate-600 transition-colors hover:text-blue-400"><ImageIcon className="w-16 h-16 md:w-20 md:h-20 mb-2 opacity-50"/><span className="text-[10px] md:text-xs font-bold uppercase tracking-widest text-center">Tocca per immagine</span></div>
             )}
          </div>
 
-         {/* 2. Liquido Coprente */}
-         <div 
-           className={`liquid-container ${getProgressColor(percentage)}`} 
-           style={{ height: `${percentage}%` }} 
-         >
+         {/* 2. Liquido e Onde SVG (Doppio ciclo per loop perfetto) */}
+         <div className="liquid-container" style={{ height: `${percentage}%`, backgroundColor: currentColor }}>
+            {/* Solo se c'è liquido, mostra le onde */}
             {percentage > 0.5 && percentage < 99.5 && (
-              <>
-                <div className="wave wave-back"></div>
-                <div className="wave wave-front"></div>
-              </>
+              <div className="wave-wrapper" style={{ color: currentColor, marginBottom: '-1px' }}>
+                 {/* Onda Dietro */}
+                 <svg className="wave-svg wave-back" viewBox="0 0 2000 100" preserveAspectRatio="none">
+                    <path d="M 0 100 V 50 Q 250 10 500 50 T 1000 50 T 1500 50 T 2000 50 V 100 H 0 Z" fill="currentColor"/>
+                 </svg>
+                 {/* Onda Davanti */}
+                 <svg className="wave-svg wave-front" viewBox="0 0 2000 100" preserveAspectRatio="none">
+                    <path d="M 0 100 V 50 Q 250 10 500 50 T 1000 50 T 1500 50 T 2000 50 V 100 H 0 Z" fill="currentColor"/>
+                 </svg>
+              </div>
             )}
          </div>
 
          {/* 3. Countdown */}
          {isActive && (
-            <div className="absolute z-30 font-black text-6xl text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] opacity-90 pointer-events-none">
+            <div className="absolute z-30 font-black text-5xl md:text-6xl text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] opacity-90 pointer-events-none">
                {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
             </div>
          )}
@@ -2272,18 +2250,16 @@ export default function App() {
         -moz-appearance: textfield;
       }
 
-      /* --- TIMER VISIVO LIQUIDO (FIX DEFINITIVO GAP - OVERLAP 10PX) --- */
+      /* --- TIMER VISIVO LIQUIDO (SVG FILL - NO GAP) --- */
       
       @keyframes wave-front {
-        0% { transform: translate3d(0, 10px, 0); }   /* Spinto giù di 10px dentro il liquido */
-        50% { transform: translate3d(-25%, 15px, 0); } /* Oscilla tra 10px e 15px */
-        100% { transform: translate3d(-50%, 10px, 0); }
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-50%); }
       }
 
       @keyframes wave-back {
-        0% { transform: translate3d(0, 10px, 0); }
-        50% { transform: translate3d(-25%, 5px, 0); } /* Oscilla tra 10px e 5px */
-        100% { transform: translate3d(-50%, 10px, 0); }
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-50%); }
       }
 
       .liquid-container {
@@ -2291,43 +2267,41 @@ export default function App() {
         bottom: 0;
         left: 0;
         width: 100%;
-        /* Transizione fluida */
+        /* Transizione fluida altezza e colore */
         transition: height 1s linear, background-color 0.5s ease;
         z-index: 10;
-        pointer-events: none;
+        /* Nessun pointer events per lasciar cliccare l'immagine sotto */
+        pointer-events: none; 
       }
 
-      .wave {
+      /* Contenitore delle onde SVG che sta SOPRA il liquido */
+      .wave-wrapper {
         position: absolute;
-        bottom: 100%; 
+        bottom: 99%; /* Sovrapposizione dell'1% per sicurezza estrema */
         left: 0;
-        width: 200%;
-        height: 60px; 
-        background-color: inherit; 
-        
-        /* Non usiamo margin-bottom, usiamo il transform nell'animazione */
-        
-        /* Maschera Sinusoidale */
-        -webkit-mask-image: url('data:image/svg+xml;utf8,<svg viewBox="0 0 1000 100" xmlns="http://www.w3.org/2000/svg"><path d="M0 100 V 50 Q 250 10 500 50 T 1000 50 V 100 H 0 Z" fill="black"/></svg>');
-        mask-image: url('data:image/svg+xml;utf8,<svg viewBox="0 0 1000 100" xmlns="http://www.w3.org/2000/svg"><path d="M0 100 V 50 Q 250 10 500 50 T 1000 50 V 100 H 0 Z" fill="black"/></svg>');
-        
-        -webkit-mask-size: 50% 100%;
-        mask-size: 50% 100%;
-        -webkit-mask-repeat: repeat-x;
-        mask-repeat: repeat-x;
-        -webkit-mask-position: bottom;
-        mask-position: bottom;
+        width: 100%;
+        height: 60px; /* Altezza dell'onda visibile */
+        overflow: hidden;
+      }
+
+      /* Le SVG delle onde */
+      .wave-svg {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 200%; /* Larghezza doppia per il loop */
+        height: 100%;
       }
 
       .wave-back {
-        opacity: 0.7; /* Opacità alta per coprire bene */
         animation: wave-back 7s linear infinite;
-        height: 65px; /* Onda dietro più alta */
+        opacity: 0.6; /* Profondità */
+        transform: scaleY(0.9); /* Leggermente diversa */
       }
 
       .wave-front {
-        opacity: 1; /* Opaca al 100% per coprire la giuntura */
         animation: wave-front 4s linear infinite;
+        opacity: 1;
       }
     `;
     document.head.appendChild(style);
