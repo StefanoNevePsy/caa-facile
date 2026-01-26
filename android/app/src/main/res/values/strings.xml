@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Caa Facile</string>
+    <string name="title_activity_main">Caa Facile</string>
+    <string name="package_name">com.caafacile.app</string>
+    <string name="custom_url_scheme">com.caafacile.app</string>
+</resources>

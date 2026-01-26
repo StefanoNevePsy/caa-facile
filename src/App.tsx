@@ -132,7 +132,11 @@ const quickSearchArasaac = async (word) => {
 const getDominantColor = async (imageUrl) => {
   return new Promise((resolve) => {
     const img = new Image();
-    img.crossOrigin = "Anonymous";
+    // FIX IMPORTANTE: Applichiamo 'Anonymous' SOLO se l'immagine viene dal web.
+    // Se è un blob locale o base64, NON mettiamo crossOrigin, altrimenti Android blocca tutto.
+    if (imageUrl && !imageUrl.startsWith('blob:') && !imageUrl.startsWith('data:')) {
+      img.crossOrigin = "Anonymous";
+    }
     img.src = imageUrl;
     img.onload = () => {
       try {
@@ -347,79 +351,85 @@ const getImageUrl = async (sourceId) => {
  * ==========================================
  */
 
-// Funzione helper per ritagliare l'immagine (Supporta padding/bordi esterni)
+// Funzione helper per ritagliare l'immagine (FIXED per Android/Base64)
 const getCroppedImg = (imageSrc, pixelCrop) => {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const image = new Image();
-    image.src = imageSrc;
-    image.crossOrigin = "anonymous"; // Importante per evitare problemi CORS su canvas sporchi
     
+    // FIX CRUCIALE: Usiamo crossOrigin SOLO se è un URL web remoto.
+    // Se è "data:..." (Base64) o "blob:..." (Locale), NON dobbiamo metterlo, altrimenti Android blocca tutto.
+    if (typeof imageSrc === 'string' && imageSrc.startsWith('http') && !imageSrc.includes('localhost')) {
+      image.crossOrigin = "anonymous";
+    }
+
     image.onload = () => {
       const canvas = document.createElement('canvas');
-      // Impostiamo la dimensione del canvas pari alla dimensione del RITAGLIO, non dell'immagine
       canvas.width = pixelCrop.width;
       canvas.height = pixelCrop.height;
       const ctx = canvas.getContext('2d');
 
-      // Pulisci il canvas (trasparente)
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // LOGICA CRUCIALE PER RITAGLIO ESTERNO:
-      // Invece di usare i parametri di ritaglio sorgente (che falliscono con numeri negativi),
-      // trasliamo il contesto.
-      // Esempio: Se il crop parte da x: -50 (50px fuori a sinistra), 
-      // disegniamo l'immagine spostata di +50px a destra dentro il nuovo canvas.
-      
       ctx.drawImage(
         image, 
-        -pixelCrop.x, // Sposta l'immagine rispetto all'origine del crop
+        -pixelCrop.x, 
         -pixelCrop.y, 
         image.width, 
         image.height
       );
 
       canvas.toBlob((blob) => {
+        if (!blob) {
+            reject(new Error("Errore creazione blob ritaglio"));
+            return;
+        }
         resolve(URL.createObjectURL(blob));
       }, 'image/png');
     };
+    
+    image.onerror = (error) => reject(new Error("Impossibile caricare l'immagine per il ritaglio."));
+    image.src = imageSrc;
+  });
+};
+
+// Funzione helper sicura per caricare immagini (FIXED)
+const loadImageElement = (src) => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    
+    // FIX CRUCIALE: Idem come sopra, niente CORS per file locali
+    if (typeof src === 'string' && src.startsWith('http') && !src.includes('localhost')) {
+      img.crossOrigin = "anonymous";
+    }
+    
+    img.onload = () => resolve(img);
+    img.onerror = (e) => reject(new Error("Errore caricamento immagine (formato non supportato o errore rete)"));
+    img.src = src;
   });
 };
 
 import { pipeline, env, AutoModel, AutoProcessor, RawImage, Tensor } from '@xenova/transformers';
 
-// --- CONFIGURAZIONE STRICT LOCAL (OFFLINE) ---
-// Disabilita completamente la ricerca online per evitare errori 401/Unauthorized
-env.allowRemoteModels = false; 
-env.allowLocalModels = true;
+// Assicurati che gli import siano corretti:
+// import { env, AutoModel, AutoProcessor, RawImage } from '@xenova/transformers';
 
-// Configurazione per usare SOLO i file nella cartella public/models
-env.allowRemoteModels = false;
-env.allowLocalModels = true;
-env.localModelPath = '/models/';
-
-// Assicurati che gli import siano presenti in cima al file:
-// import { pipeline, env, AutoModel, AutoProcessor, RawImage } from '@xenova/transformers';
-
-// Configurazione Offline
 env.allowRemoteModels = false;
 env.allowLocalModels = true;
 env.localModelPath = '/models/';
 
 const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableShadow) => {
   try {
-    // 1. Ritaglio preliminare
+    // 1. Ritaglio preliminare (se necessario)
     let currentUrl = originalBlobUrl;
     if (cropArea) {
       currentUrl = await getCroppedImg(originalBlobUrl, cropArea);
     }
 
-    let imgBitmap;
+    let resultImageElement; // Useremo elementi Image standard HTML
 
     if (enableAI) {
       // --- CONFIGURAZIONE AI ---
       const modelId = 'rmbg-1.4-v2'; 
 
-      // A. Carichiamo il modello (Manual Mode)
+      // A. Carichiamo il modello
       const model = await AutoModel.from_pretrained(modelId, {
         quantized: true,
         local_files_only: true,
@@ -448,65 +458,59 @@ const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableS
       const { pixel_values } = await processor(image);
 
       // D. Inferenza (AI)
-      // Passiamo esplicitamente 'input' per evitare errori di mapping
       const { output } = await model({ input: pixel_values });
 
-      // --- FIX: RICOSTRUZIONE MANUALE DELL'IMMAGINE ---
-      // Invece di usare RawImage.fromTensor (che dava errore),
-      // prendiamo i dati grezzi e costruiamo noi i pixel RGBA.
+      // --- RICOSTRUZIONE MANUALE (NO createBitmap) ---
       
-      // 1. Ottieni i dati della maschera (valori 0-255)
-      // output[0] è un tensore 1x1024x1024. .data ci dà l'array lineare.
+      // 1. Dati Maschera
       const rawData = output[0].mul(255).to('uint8').data;
-      
-      // 2. Crea un buffer per l'immagine RGBA (4 canali)
       const width = 1024;
       const height = 1024;
       const pixelCount = width * height;
       const rgbaData = new Uint8ClampedArray(pixelCount * 4);
       
-      // 3. Riempi il buffer: Mettiamo il valore della maschera nel canale ALPHA
+      // 2. Creiamo il buffer RGBA per la maschera
       for (let i = 0; i < pixelCount; i++) {
-        const val = rawData[i]; // Valore predizione (0=sfondo, 255=soggetto)
-        rgbaData[i * 4] = 0;     // R (nero)
-        rgbaData[i * 4 + 1] = 0; // G (nero)
-        rgbaData[i * 4 + 2] = 0; // B (nero)
-        rgbaData[i * 4 + 3] = val; // Alpha (Trasparenza!)
+        const val = rawData[i]; 
+        rgbaData[i * 4] = 0;     
+        rgbaData[i * 4 + 1] = 0; 
+        rgbaData[i * 4 + 2] = 0; 
+        rgbaData[i * 4 + 3] = val; // Alpha
       }
       
-      // 4. Crea l'oggetto ImageData
       const maskImageData = new ImageData(rgbaData, width, height);
 
-      // E. Applicazione Maschera (Blending)
+      // E. Applicazione Maschera (Blending) su Canvas
       const canvas = document.createElement('canvas');
-      canvas.width = image.width;
-      canvas.height = image.height;
+      // Carichiamo l'originale usando il metodo sicuro per Android
+      const originalImgEl = await loadImageElement(currentUrl);
+      
+      canvas.width = originalImgEl.width;
+      canvas.height = originalImgEl.height;
       const ctx = canvas.getContext('2d');
 
       // Disegna immagine originale
-      const originalBitmap = await createImageBitmap(await (await fetch(currentUrl)).blob());
-      ctx.drawImage(originalBitmap, 0, 0);
+      ctx.drawImage(originalImgEl, 0, 0);
 
-      // Prepara la maschera su canvas temporaneo per poterla scalare
+      // Prepara la maschera
       const maskCanvas = document.createElement('canvas');
       maskCanvas.width = width; 
       maskCanvas.height = height;
       const maskCtx = maskCanvas.getContext('2d');
       maskCtx.putImageData(maskImageData, 0, 0);
 
-      // Applica la maschera: mantiene l'originale solo dove l'Alpha della maschera è 255
+      // Applica la maschera
       ctx.globalCompositeOperation = 'destination-in';
-      ctx.drawImage(maskCanvas, 0, 0, width, height, 0, 0, image.width, image.height);
+      ctx.drawImage(maskCanvas, 0, 0, width, height, 0, 0, originalImgEl.width, originalImgEl.height);
 
-      // Risultato finale
+      // Risultato intermedio come URL per ricaricarlo come elemento
       const processedBlob = await new Promise(r => canvas.toBlob(r));
-      imgBitmap = await createImageBitmap(processedBlob);
+      const processedUrl = URL.createObjectURL(processedBlob);
+      resultImageElement = await loadImageElement(processedUrl);
 
     } else {
-      // FALLBACK (No AI)
-      const response = await fetch(currentUrl);
-      const blob = await response.blob();
-      imgBitmap = await createImageBitmap(blob);
+      // FALLBACK (No AI) - Caricamento sicuro
+      resultImageElement = await loadImageElement(currentUrl);
     }
 
     // --- Composizione Card Finale (500x500) ---
@@ -519,9 +523,9 @@ const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableS
     fCtx.clearRect(0, 0, size, size);
 
     // Centratura e Scala
-    const scaleFactor = Math.min((size * 0.9) / imgBitmap.width, (size * 0.9) / imgBitmap.height);
-    const w = imgBitmap.width * scaleFactor;
-    const h = imgBitmap.height * scaleFactor;
+    const scaleFactor = Math.min((size * 0.9) / resultImageElement.width, (size * 0.9) / resultImageElement.height);
+    const w = resultImageElement.width * scaleFactor;
+    const h = resultImageElement.height * scaleFactor;
     const x = (size - w) / 2;
     const y = (size - h) / 2;
 
@@ -537,13 +541,15 @@ const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableS
       fCtx.restore();
     }
 
-    fCtx.drawImage(imgBitmap, x, y, w, h);
+    // Disegna l'elemento immagine finale
+    fCtx.drawImage(resultImageElement, x, y, w, h);
 
     return new Promise(resolve => finalCanvas.toBlob(resolve, 'image/png'));
 
   } catch (error) {
     console.error("Errore elaborazione immagine:", error);
-    alert("Errore AI: " + error.message);
+    alert("Errore: " + error.message);
+    // Fallback sicuro in caso di errore
     return processAdvancedImage(originalBlobUrl, cropArea, false, enableShadow);
   }
 };
@@ -554,18 +560,29 @@ const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableS
  * ==========================================
  */
 
-const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '' }) => {
+// --- SEARCH MODAL (AGGIORNATO CON IMPORT PROGETTI) ---
+// --- SEARCH MODAL (FIX IMMAGINI ROTTE + ORDINE NUMERICO) ---
+const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = [] }) => {
   const [query, setQuery] = useState(initialQuery);
   const [googleQuery, setGoogleQuery] = useState('');
   const [urlInput, setUrlInput] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('arasaac'); // Default su Arasaac per velocità
+  const [activeTab, setActiveTab] = useState('arasaac'); 
   const fileInputRef = useRef(null);
-  const [editorImage, setEditorImage] = useState(null); // URL immagine temporanea per editor
-  const [tempFileName, setTempFileName] = useState(''); // Nome file temporaneo
+  const [editorImage, setEditorImage] = useState(null); 
+  const [tempFileName, setTempFileName] = useState(''); 
 
-  // Effetto: Quando si apre il modale, se c'è una query iniziale, cerca subito
+  // Stati per la navigazione avanzata "I Miei Progetti"
+  const [selectedBoard, setSelectedBoard] = useState(null);
+  const [selectedPageIndex, setSelectedPageIndex] = useState(0); 
+  
+  // STATO PER LE IMMAGINI "IDRATATE" (Visibili)
+  const [viewItems, setViewItems] = useState([]); 
+
+  // STATO PER LA STORIA DELLE SELEZIONI (Numeri 1, 2, 3...)
+  const [selectionHistory, setSelectionHistory] = useState([]); 
+
   useEffect(() => {
     if (isOpen && initialQuery) {
       setQuery(initialQuery);
@@ -574,8 +591,51 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '' }) => {
     } else if (isOpen) {
       setQuery('');
       setResults([]);
+      // Reset navigazione
+      setSelectedBoard(null);
+      setSelectedPageIndex(0);
+      setSelectionHistory([]); 
+      setViewItems([]);
     }
   }, [isOpen, initialQuery]);
+
+  // --- EFFETTO PER CARICARE LE IMMAGINI DEI PROGETTI (FIX DEFINITIVO) ---
+  useEffect(() => {
+    const hydrateImages = async () => {
+      if (!selectedBoard) {
+        setViewItems([]);
+        return;
+      }
+
+      // 1. Recupera gli items grezzi
+      let rawItems = [];
+      if (selectedBoard.type === 'grid') {
+        rawItems = (selectedBoard.pages && selectedBoard.pages[selectedPageIndex]) 
+          ? selectedBoard.pages[selectedPageIndex].items 
+          : [];
+      } else {
+        rawItems = selectedBoard.items || [];
+      }
+
+      // 2. IDRATAZIONE FORZATA: Ignoriamo item.imageUrl se è vecchio.
+      // Richiediamo SEMPRE una URL fresca dal DB (getImageUrl lo fa gratis se è un blob).
+      const hydrated = await Promise.all(rawItems.map(async (item) => {
+        // Se non ha sourceId (es. preset), imageUrl resterà null/undefined, ed è corretto.
+        // Se ha sourceId, otteniamo un blob URL valido per QUESTA sessione.
+        const freshUrl = item.sourceId ? await getImageUrl(item.sourceId) : item.imageUrl;
+        
+        return { 
+          ...item, 
+          imageUrl: freshUrl 
+        };
+      }));
+
+      setViewItems(hydrated);
+    };
+
+    hydrateImages();
+  }, [selectedBoard, selectedPageIndex]);
+  // -------------------------------------------------------------------------
 
   if (!isOpen) return null;
 
@@ -587,12 +647,7 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '' }) => {
       const response = await fetch(`https://api.arasaac.org/api/pictograms/it/search/${encodeURIComponent(q)}`);
       const data = await response.json();
       setResults(Array.isArray(data) ? data : []);
-    } catch (e) {
-      console.error("Errore API Arasaac", e);
-      setResults([]);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { console.error(e); setResults([]); } finally { setLoading(false); }
   };
 
   const searchWikimedia = async () => {
@@ -614,10 +669,25 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '' }) => {
     } catch (e) { setResults([]); } finally { setLoading(false); }
   };
 
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setTempFileName(file.name.split('.')[0]);
+      setEditorImage(reader.result); 
+    };
+    reader.readAsDataURL(file);
+    e.target.value = null; 
+  };
+
+  // --- SELEZIONE FINALE ---
   const handleSelect = async (item, source) => {
-    setLoading(true);
+    if (source !== 'boardItem' && source !== 'preset') setLoading(true);
+    
     let imageUrl = '';
     let sourceId = '';
+    let dominantColor = null;
 
     if (source === 'arasaac') {
       imageUrl = `https://api.arasaac.org/api/pictograms/${item._id}?download=false`;
@@ -627,87 +697,85 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '' }) => {
       imageUrl = item.url;
       sourceId = `wiki-${item._id}`;
       await cacheArasaacImage(imageUrl, sourceId); 
+    } else if (source === 'boardItem') {
+       // Qui item.imageUrl è quello "fresco" generato dallo useEffect
+       imageUrl = item.imageUrl; 
+       sourceId = item.sourceId;
+       dominantColor = item.dominantColor;
+    } else if (source === 'preset') {
+       sourceId = `preset-${item.id}`;
     }
 
-    const blobUrl = await getImageUrl(sourceId);
-    const dominantColor = await getDominantColor(blobUrl);
+    if (source !== 'boardItem' && source !== 'preset') {
+       const blobUrl = await getImageUrl(sourceId);
+       dominantColor = await getDominantColor(blobUrl);
+       imageUrl = blobUrl;
+    }
 
     onSelect({
       id: crypto.randomUUID(), 
       sourceId: sourceId,
-      label: item.keywords ? item.keywords[0]?.keyword : (item.title || query),
-      imageUrl: blobUrl,
+      label: item.label || (item.keywords ? item.keywords[0]?.keyword : (item.title || query)),
+      imageUrl: imageUrl,
       dominantColor: dominantColor,
+      iconId: item.iconId || (source === 'preset' ? item.id : undefined), 
       completed: false
     });
+
     setLoading(false);
-    onClose();
+
+    if (!initialQuery) {
+        // MODALITÀ AGGIUNTA
+        const trackId = item.id || item._id || ('preset-' + item.id);
+        setSelectionHistory(prev => [...prev, trackId]); 
+    } else {
+        onClose();
+    }
   };
 
-  const handlePresetSelect = (preset) => {
-    onSelect({ id: crypto.randomUUID(), sourceId: `preset-${preset.id}`, label: preset.label, imageUrl: null, iconId: preset.id, completed: false });
-    onClose();
+  const handleEditorSave = async (processedBlob) => {
+    setLoading(true);
+    const uniqueId = 'local-' + crypto.randomUUID();
+    await dbOperations.addImage({
+      sourceId: uniqueId,
+      blob: processedBlob,
+      createdAt: new Date()
+    });
+    const blobUrl = await getImageUrl(uniqueId);
+    onSelect({ id: crypto.randomUUID(), sourceId: uniqueId, label: tempFileName, imageUrl: blobUrl, completed: false });
+    setLoading(false); setEditorImage(null); onClose();
   };
-
-  const handleFileUpload = (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  // Invece di salvare subito, apriamo l'editor
-  const url = URL.createObjectURL(file);
-  setTempFileName(file.name.split('.')[0]);
-  setEditorImage(url);
-  // Reset input per permettere ricaricamento stesso file
-  e.target.value = null; 
-};
-
-const handleEditorSave = async (processedBlob) => {
-  setLoading(true);
-  // Salva il blob processato nel DB
-  const uniqueId = 'local-' + crypto.randomUUID();
-  await dbOperations.addImage({
-    sourceId: uniqueId,
-    blob: processedBlob,
-    createdAt: new Date()
-  });
-
-  const blobUrl = await getImageUrl(uniqueId);
-
-  onSelect({ 
-    id: crypto.randomUUID(), 
-    sourceId: uniqueId, 
-    label: tempFileName, 
-    imageUrl: blobUrl, 
-    completed: false 
-  });
-
-  setLoading(false);
-  setEditorImage(null); // Chiudi editor
-  onClose(); // Chiudi modale ricerca
-};
 
   const handleUrlSubmit = async () => {
     if(!urlInput) return;
     setLoading(true);
     onSelect({ id: crypto.randomUUID(), sourceId: urlInput, label: googleQuery || 'Web', imageUrl: urlInput, completed: false });
-    setLoading(false);
-    onClose();
+    setLoading(false); onClose();
   };
+
+  const handlePresetSelect = (preset) => handleSelect(preset, 'preset');
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 animate-in fade-in">
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+        {/* Header Modale */}
         <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center">
           <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Cerca Immagine</h3>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full"><X className="w-5 h-5 text-slate-500" /></button>
         </div>
+        
+        {/* Tab Navigation */}
         <div className="flex p-2 gap-2 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 overflow-x-auto">
-          {['arasaac', 'presets', 'wikimedia', 'local', 'web'].map(tab => (
+          {['arasaac', 'presets', 'boards', 'wikimedia', 'local', 'web'].map(tab => (
             <button key={tab} onClick={() => { setActiveTab(tab); setResults([]); if(tab !== 'arasaac') setQuery(''); }} className={`flex-1 py-2 px-4 rounded-lg font-medium text-sm whitespace-nowrap transition-colors capitalize ${activeTab === tab ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700'}`}>
-              {tab === 'presets' ? 'Icone' : tab === 'arasaac' ? 'Simboli' : tab === 'wikimedia' ? 'Foto Reali' : tab === 'local' ? 'Galleria' : 'Link'}
+              {tab === 'presets' ? 'Icone' : tab === 'arasaac' ? 'Simboli' : tab === 'boards' ? 'I Miei Progetti' : tab === 'wikimedia' ? 'Foto Reali' : tab === 'local' ? 'Galleria' : 'Link'}
             </button>
           ))}
         </div>
+
+        {/* Contenuto Principale */}
         <div className="flex-1 overflow-y-auto p-4">
+          
           {(activeTab === 'arasaac' || activeTab === 'wikimedia') && (
             <>
               <div className="flex gap-2 mb-4">
@@ -716,35 +784,185 @@ const handleEditorSave = async (processedBlob) => {
               </div>
               {loading ? <div className="flex justify-center py-10"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div> : (
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-                  {results.map((item) => (
-                    <button key={item._id} onClick={() => handleSelect(item, activeTab)} className="group aspect-square p-2 border rounded-lg hover:border-blue-500 bg-white overflow-hidden relative">
+                  {results.map((item) => {
+                    const trackId = item._id;
+                    const selectionIndex = selectionHistory.lastIndexOf(trackId);
+                    const isSelected = selectionIndex !== -1;
+                    
+                    return (
+                    <button 
+                      key={item._id} 
+                      onClick={() => handleSelect(item, activeTab)} 
+                      className={`group aspect-square p-2 border rounded-lg overflow-hidden relative transition-all ${isSelected ? 'border-blue-500 ring-2 ring-blue-500 bg-blue-50' : 'hover:border-blue-500 bg-white'}`}
+                    >
+                      {isSelected && (
+                        <div className="absolute top-2 right-2 z-10 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md animate-in zoom-in">
+                          {selectionHistory.filter(id => id === trackId).length > 1 ? selectionHistory.length : selectionIndex + 1}
+                        </div>
+                      )}
                       <img src={activeTab === 'arasaac' ? `https://api.arasaac.org/api/pictograms/${item._id}?download=false` : item.url} className="w-full h-full object-contain" />
                       <span className="absolute bottom-0 left-0 w-full bg-black/50 text-white text-[10px] truncate px-1">{item.keywords ? item.keywords[0]?.keyword : item.title}</span>
                     </button>
-                  ))}
+                  )})}
                   {results.length === 0 && query && !loading && <p className="col-span-full text-center text-slate-400">Nessun risultato.</p>}
                 </div>
               )}
             </>
           )}
-          {/* ... Altri tab (presets, local, web) rimangono invariati ma per brevità ometto il rendering se non sono attivi, il codice originale li gestisce ... */}
-          {activeTab === 'presets' && <div className="grid grid-cols-4 sm:grid-cols-5 gap-4">{PRESET_ICONS.map((preset) => (<button key={preset.id} onClick={() => handlePresetSelect(preset)} className={`aspect-square flex flex-col items-center justify-center p-2 rounded-xl border hover:scale-105 transition-all group ${preset.style.bg} ${preset.style.border}`}><preset.icon className={`w-8 h-8 mb-2 ${preset.style.icon}`} /><span className="text-xs font-bold text-slate-700 truncate w-full text-center">{preset.label}</span></button>))}</div>}
+
+          {activeTab === 'presets' && (
+            <div className="grid grid-cols-4 sm:grid-cols-5 gap-4">
+                {PRESET_ICONS.map((preset) => {
+                   const trackId = `preset-${preset.id}`;
+                   const selectionIndex = selectionHistory.indexOf(trackId);
+                   const isSelected = selectionIndex !== -1;
+
+                   return (
+                    <button 
+                        key={preset.id} 
+                        onClick={() => handlePresetSelect(preset)} 
+                        className={`aspect-square flex flex-col items-center justify-center p-2 rounded-xl border transition-all group relative ${preset.style.bg} ${preset.style.border} ${isSelected ? 'ring-4 ring-blue-400 scale-95' : 'hover:scale-105'}`}
+                    >
+                        {isSelected && (
+                           <div className="absolute top-1 right-1 z-20 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md animate-in zoom-in">
+                              {selectionIndex + 1}
+                           </div>
+                        )}
+                        <preset.icon className={`w-8 h-8 mb-2 ${preset.style.icon}`} />
+                        <span className="text-xs font-bold text-slate-700 truncate w-full text-center">{preset.label}</span>
+                    </button>
+                   )
+                })}
+            </div>
+          )}
+
+          {/* TAB 3: I MIEI PROGETTI */}
+          {activeTab === 'boards' && (
+             <div className="h-full flex flex-col">
+                {/* Livello 1: Selezione Progetto */}
+                {!selectedBoard && (
+                   <div className="space-y-2">
+                     <h4 className="text-sm font-bold text-slate-500 mb-2 uppercase">Scegli da dove copiare:</h4>
+                     <div className="grid grid-cols-1 gap-2">
+                       {boards.filter(b => b.type === 'grid' || b.type === 'sequence').map(b => (
+                         <button key={b.id} onClick={() => { setSelectedBoard(b); setSelectedPageIndex(0); }} className="flex items-center gap-3 p-3 rounded-xl border hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors">
+                           <div className={`p-2 rounded-lg ${b.type === 'grid' ? 'bg-blue-100 text-blue-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                             {b.type === 'grid' ? <LayoutGrid className="w-5 h-5"/> : <ListOrdered className="w-5 h-5"/>}
+                           </div>
+                           <div className="flex-1">
+                             <div className="font-bold text-slate-800 dark:text-slate-200">{b.title}</div>
+                             <div className="text-xs text-slate-500">{new Date(b.updatedAt).toLocaleDateString()}</div>
+                           </div>
+                           <ArrowRight className="w-4 h-4 text-slate-300"/>
+                         </button>
+                       ))}
+                       {boards.filter(b => b.type === 'grid' || b.type === 'sequence').length === 0 && (
+                          <div className="text-center p-8 text-slate-400 border-2 border-dashed rounded-xl">Non hai ancora creato progetti di comunicazione.</div>
+                       )}
+                     </div>
+                   </div>
+                )}
+
+                {/* Livello 2: Navigazione Items e Pagine */}
+                {selectedBoard && (
+                   <div className="flex flex-col h-full">
+                      <div className="flex items-center justify-between mb-4 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-lg">
+                        <button onClick={() => setSelectedBoard(null)} className="flex items-center gap-1 text-sm text-blue-600 font-bold px-2 py-1 hover:bg-blue-100 rounded">
+                           <ArrowLeft className="w-4 h-4"/> Indietro
+                        </button>
+                        
+                        {selectedBoard.type === 'grid' && selectedBoard.pages && selectedBoard.pages.length > 1 ? (
+                           <div className="flex items-center gap-2">
+                              <button 
+                                disabled={selectedPageIndex === 0}
+                                onClick={() => setSelectedPageIndex(prev => Math.max(0, prev - 1))}
+                                className="p-1 rounded hover:bg-slate-200 disabled:opacity-30"
+                              >
+                                <ArrowLeft className="w-5 h-5"/>
+                              </button>
+                              <span className="text-xs font-bold uppercase text-slate-500">
+                                 {selectedBoard.pages[selectedPageIndex].name} ({selectedPageIndex + 1}/{selectedBoard.pages.length})
+                              </span>
+                              <button 
+                                disabled={selectedPageIndex >= selectedBoard.pages.length - 1}
+                                onClick={() => setSelectedPageIndex(prev => Math.min(selectedBoard.pages.length - 1, prev + 1))}
+                                className="p-1 rounded hover:bg-slate-200 disabled:opacity-30"
+                              >
+                                <ArrowRight className="w-5 h-5"/>
+                              </button>
+                           </div>
+                        ) : (
+                           <span className="text-sm font-bold text-slate-700 dark:text-slate-300 truncate max-w-[150px]">{selectedBoard.title}</span>
+                        )}
+                      </div>
+
+                      {/* Griglia Items IDRATATI */}
+                      <div className="flex-1 overflow-y-auto min-h-[300px]">
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                           {(!viewItems || viewItems.length === 0) ? (
+                              <div className="col-span-full text-center text-slate-400 py-10">
+                                {selectedBoard ? "Caricamento immagini..." : "Pagina vuota."}
+                              </div>
+                           ) : (
+                              viewItems.map(item => {
+                                 // Gestione Numero Selezione
+                                 const trackId = item.id;
+                                 const selectionIndex = selectionHistory.indexOf(trackId);
+                                 const isSelected = selectionIndex !== -1;
+
+                                 return (
+                                   <button 
+                                      key={item.id} 
+                                      onClick={() => handleSelect(item, 'boardItem')} 
+                                      className={`aspect-square p-2 border-2 rounded-xl flex flex-col items-center justify-center bg-white dark:bg-slate-700 transition-all duration-200 relative ${isSelected ? 'border-blue-500 bg-blue-50 scale-95' : 'hover:border-blue-500 hover:shadow-md'}`}
+                                   >
+                                      {/* Pallino Numerato */}
+                                      {isSelected && (
+                                         <div className="absolute top-1 right-1 z-10 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md animate-in zoom-in">
+                                            {selectionIndex + 1}
+                                         </div>
+                                      )}
+                                      
+                                      <div className="w-full h-2/3 flex items-center justify-center overflow-hidden mb-1">
+                                        {/* Ora item.imageUrl è garantito dall'useEffect */}
+                                        {item.imageUrl ? <img src={item.imageUrl} className="max-w-full max-h-full object-contain"/> : item.iconId ? (() => { const IconComp = getIconComponent(item.iconId); return <IconComp className="w-8 h-8"/> })() : <div className="text-xs text-slate-300">No IMG</div>}
+                                      </div>
+                                      <div className="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate w-full text-center">{item.label}</div>
+                                   </button>
+                                 );
+                              })
+                           )}
+                        </div>
+                      </div>
+                   </div>
+                )}
+             </div>
+          )}
+
           {activeTab === 'local' && <div className="flex flex-col items-center justify-center h-full gap-4 py-10 border-2 border-dashed rounded-xl bg-slate-50 dark:bg-slate-800/50"><div className="p-4 bg-blue-100 rounded-full text-blue-600"><Upload className="w-8 h-8" /></div><p className="text-sm font-medium">Carica foto dal dispositivo</p><input type="file" ref={fileInputRef} accept="image/*" className="hidden" onChange={handleFileUpload} /><button onClick={() => fileInputRef.current?.click()} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg">Scegli File</button></div>}
+          
+          {activeTab === 'web' && (
+             <div className="p-4 space-y-4">
+                <input type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} placeholder="Incolla qui l'URL dell'immagine..." className="w-full px-4 py-2 border rounded-lg dark:bg-slate-700 dark:text-white" />
+                <input type="text" value={googleQuery} onChange={(e) => setGoogleQuery(e.target.value)} placeholder="Nome opzionale (etichetta)" className="w-full px-4 py-2 border rounded-lg dark:bg-slate-700 dark:text-white" />
+                <button onClick={handleUrlSubmit} disabled={!urlInput} className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold disabled:opacity-50">Usa Immagine</button>
+             </div>
+          )}
         </div>
-        {/* ... resto del JSX ... */}
+      
       <ImageEditorModal 
         isOpen={!!editorImage} 
         imageSrc={editorImage} 
         onClose={() => setEditorImage(null)} 
         onSave={handleEditorSave} 
       />
-    </div> // Chiusura del div principale del modale esistente
-  </div> // Chiusura del div overlay
-);
+    </div> 
+  </div> 
+  );
 };
 
-// --- IMAGE EDITOR MODAL (TOTAL FREEDOM CROP) ---
 // --- IMAGE EDITOR MODAL (TRANSFORMERS.JS) ---
+// --- IMAGE EDITOR MODAL (VERSIONE FINALE BASE64) ---
 const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -753,6 +971,12 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
   const [addShadow, setAddShadow] = useState(true);
   const [processing, setProcessing] = useState(false);
   
+  // Reset
+  useEffect(() => {
+    setZoom(1);
+    setCrop({ x: 0, y: 0 });
+  }, [imageSrc]);
+
   const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
     setCroppedAreaPixels(croppedAreaPixels);
   }, []);
@@ -762,27 +986,33 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
   const handleSave = async () => {
     setProcessing(true);
     try {
-      // Nessun parametro "path" necessario, fa tutto la libreria
       const finalBlob = await processAdvancedImage(imageSrc, croppedAreaPixels, removeBg, addShadow);
       onSave(finalBlob);
       onClose();
     } catch (e) {
       console.error(e);
-      alert("Errore durante l'elaborazione. Verifica la console.");
+      alert("Errore elaborazione: " + e.message);
     } finally {
       setProcessing(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[110] bg-black/80 flex items-center justify-center p-4 animate-in fade-in">
-      <div className="bg-white dark:bg-slate-800 w-full max-w-4xl rounded-2xl overflow-hidden flex flex-col h-[90vh]">
-        <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900 shrink-0">
-          <h3 className="font-bold flex items-center gap-2"><CropIcon className="w-5 h-5"/> Editor Immagine</h3>
-          <button onClick={onClose} disabled={processing}><X className="w-6 h-6"/></button>
+    <div className="fixed inset-0 z-[110] bg-black/90 flex items-center justify-center p-0 md:p-4 animate-in fade-in">
+      <div className="bg-white dark:bg-slate-800 w-full h-full md:h-[90vh] md:max-w-4xl md:rounded-2xl overflow-hidden flex flex-col relative">
+        
+        {/* HEADER */}
+        <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900 shrink-0 z-20">
+          <h3 className="font-bold flex items-center gap-2 text-slate-800 dark:text-white">
+            <CropIcon className="w-5 h-5"/> Editor Immagine
+          </h3>
+          <button onClick={onClose} disabled={processing} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full">
+            <X className="w-6 h-6"/>
+          </button>
         </div>
         
-        <div className="relative flex-1 bg-slate-900 w-full overflow-hidden flex items-center justify-center">
+        {/* AREA DI RITAGLIO - Layout sicuro per Android */}
+        <div className="relative flex-1 w-full bg-slate-950 overflow-hidden min-h-[300px]">
            <Cropper
             image={imageSrc}
             crop={crop}
@@ -790,72 +1020,66 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
             objectFit="contain" 
             restrictPosition={false} 
             minZoom={0.5}
-            initialCroppedAreaPercentages={{ width: 90, height: 90, x: 5, y: 5 }}
+            maxZoom={3}
             onCropChange={setCrop}
             onCropComplete={onCropComplete}
             onZoomChange={setZoom}
             style={{ 
-              containerStyle: { width: '100%', height: '100%', backgroundColor: '#0f172a' },
+              containerStyle: { width: '100%', height: '100%', backgroundColor: '#020617' },
+              mediaStyle: { maxWidth: 'none' }
             }}
           />
         </div>
 
-        <div className="p-6 space-y-6 shrink-0 bg-white dark:bg-slate-800 z-10 border-t dark:border-slate-700">
+        {/* CONTROLLI */}
+        <div className="p-4 space-y-4 shrink-0 bg-white dark:bg-slate-800 z-20 border-t dark:border-slate-700 overflow-y-auto max-h-[40vh] pb-safe">
           <div className="space-y-2">
-            <div className="flex justify-between">
+            <div className="flex justify-between px-1">
               <label className="text-xs font-bold uppercase text-slate-500">Zoom</label>
               <span className="text-xs text-slate-400">{Math.round(zoom * 100)}%</span>
             </div>
-            <input type="range" value={zoom} min={0.5} max={3} step={0.1} onChange={(e) => setZoom(Number(e.target.value))} className="w-full accent-blue-600"/>
+            <input type="range" value={zoom} min={0.5} max={3} step={0.1} onChange={(e) => setZoom(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"/>
           </div>
 
           <div className="flex flex-col gap-3">
              <label className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${removeBg ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-200 dark:border-slate-700'}`}>
                 <input type="checkbox" checked={removeBg} onChange={() => setRemoveBg(!removeBg)} className="w-5 h-5 mt-1 text-blue-600 rounded focus:ring-blue-500" />
                 <div className="flex-1">
-                   <div className="font-bold text-sm flex items-center gap-2"><Wand2 className="w-4 h-4 text-blue-500"/> Rimuovi Sfondo (AI)</div>
-                   <p className="text-xs text-slate-500 mb-2">Usa il modello neurale Xenova/modnet.</p>
-                   {/* --- TESTO AGGIORNATO --- */}
-                   {removeBg && (
-                     <div className="text-[11px] leading-tight p-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg flex gap-2">
-                       <span className="text-base">⏳</span>
-                       <div>
-                         <strong>Elaborazione locale:</strong> L'operazione avviene sul dispositivo per garantire la privacy. 
-                         <br/>Potrebbe essere lenta (alcuni secondi), specialmente al primo avvio.
-                       </div>
-                     </div>
-                   )}
-                   {/* ----------------------- */}
+                   <div className="font-bold text-sm flex items-center gap-2 text-slate-900 dark:text-white"><Wand2 className="w-4 h-4 text-blue-500"/> Rimuovi Sfondo (AI)</div>
+                   {removeBg && <div className="mt-2 text-[11px] leading-tight p-2 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700 rounded-lg flex gap-2"><span className="text-base">⚡</span><div><strong>Elaborazione su dispositivo:</strong> Sfrutta la potenza del tuo processore.</div></div>}
                 </div>
              </label>
-
              <label className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${addShadow ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-200 dark:border-slate-700'}`}>
                 <input type="checkbox" checked={addShadow} onChange={() => setAddShadow(!addShadow)} className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500" />
-                <div className="flex-1">
-                   <div className="font-bold text-sm flex items-center gap-2"><Layers className="w-4 h-4 text-indigo-500"/> Aggiungi Ombra</div>
-                   <p className="text-xs text-slate-500">Crea profondità realistica.</p>
-                </div>
+                <div className="flex-1"><div className="font-bold text-sm flex items-center gap-2 text-slate-900 dark:text-white"><Layers className="w-4 h-4 text-indigo-500"/> Aggiungi Ombra</div></div>
              </label>
           </div>
         </div>
 
-        <div className="p-4 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-900 flex justify-end gap-3 shrink-0">
-           <button onClick={onClose} disabled={processing} className="px-4 py-2 text-slate-600 font-bold">Annulla</button>
-           <button onClick={handleSave} disabled={processing} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold flex items-center gap-2 disabled:opacity-50 min-w-[160px] justify-center">
-             {processing ? (
-               <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Elaborazione AI...</>
-             ) : (
-               <><CheckCircle2 className="w-4 h-4"/> Salva Immagine</>
-             )}
-           </button>
+        {/* FOOTER */}
+        <div className="p-4 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-900 flex justify-end gap-3 shrink-0 z-20 pb-8 md:pb-4">
+           <button onClick={onClose} disabled={processing} className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-lg">Annulla</button>
+           <button onClick={handleSave} disabled={processing} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg">{processing ? "Elaborazione..." : "Salva"}</button>
         </div>
       </div>
     </div>
   );
 };
 
-// --- CARD COMPONENT ---
-const PictogramCard = ({ item, onRemove, onToggleComplete, onEditLabel, onReplaceImage, mode, orientation, isLocked }) => {
+// --- CARD COMPONENT (AGGIORNATO CON EVIDENZIAZIONE) ---
+const PictogramCard = ({ 
+  item, 
+  onRemove, 
+  onToggleComplete, 
+  onEditLabel, 
+  onReplaceImage, 
+  mode, 
+  orientation, 
+  isLocked, 
+  // Nuove props per l'interazione
+  isActive, 
+  onClick 
+}) => {
   const [isEditing, setIsEditing] = useState(false);
   const [tempLabel, setTempLabel] = useState(item.label);
 
@@ -867,11 +1091,24 @@ const PictogramCard = ({ item, onRemove, onToggleComplete, onEditLabel, onReplac
   const isHorizontalSequence = mode === 'sequence' && orientation === 'horizontal';
   const isVerticalSequence = mode === 'sequence' && orientation === 'vertical';
 
+  // Gestore del click principale
+  const handleCardClick = () => {
+    if (isLocked && onClick) {
+      onClick(item.id); // Trigger dell'evidenziazione in modalità bambino
+    } else if (!isLocked && onReplaceImage) {
+      onReplaceImage(item.id); // Modifica immagine in modalità edit
+    }
+  };
+
   return (
     <div 
+      onClick={handleCardClick}
       className={`
-        relative group flex items-center p-3 rounded-xl shadow-sm border-2 transition-all
-        ${item.completed ? 'bg-slate-100 border-slate-200 opacity-60 grayscale' : 'bg-white border-slate-200 dark:bg-slate-800 dark:border-slate-700'}
+        relative group flex items-center p-3 rounded-xl shadow-sm border-2 transition-all duration-200
+        ${/* LOGICA EVIDENZIAZIONE */ ''}
+        ${isActive && isLocked ? 'ring-4 ring-blue-500 border-blue-600 scale-105 bg-blue-50 dark:bg-blue-900/30 z-10' : 'border-slate-200 dark:border-slate-700'}
+        ${!isActive && isLocked ? 'hover:scale-[1.02] active:scale-95 cursor-pointer' : ''}
+        ${item.completed ? 'bg-slate-100 border-slate-200 opacity-60 grayscale' : 'bg-white dark:bg-slate-800'}
         ${isVerticalSequence ? 'flex-row w-full h-24 gap-4' : 'flex-col'}
         ${isHorizontalSequence ? 'min-w-[140px] max-w-[140px] aspect-[4/5]' : ''}
         ${mode === 'grid' ? 'aspect-square flex-col' : ''}
@@ -885,12 +1122,12 @@ const PictogramCard = ({ item, onRemove, onToggleComplete, onEditLabel, onReplac
       )}
 
       {mode === 'sequence' && (
-        <button onClick={() => onToggleComplete(item.id)} className={`z-10 p-1 rounded-full bg-white dark:bg-slate-700 shadow-sm transition-colors ${isVerticalSequence ? 'mr-2' : 'absolute top-2 left-2'} ${item.completed ? 'text-green-600' : 'text-slate-300 hover:text-green-500'}`}>
+        <button onClick={(e) => { e.stopPropagation(); onToggleComplete(item.id); }} className={`z-10 p-1 rounded-full bg-white dark:bg-slate-700 shadow-sm transition-colors ${isVerticalSequence ? 'mr-2' : 'absolute top-2 left-2'} ${item.completed ? 'text-green-600' : 'text-slate-300 hover:text-green-500'}`}>
           <CheckCircle2 className={`w-6 h-6 ${item.completed ? 'fill-green-100' : ''}`} />
         </button>
       )}
 
-      <div onClick={() => !isLocked && onReplaceImage && onReplaceImage(item.id)} className={`flex items-center justify-center p-1 overflow-hidden relative ${isVerticalSequence ? 'h-full aspect-square' : 'flex-1 w-full'} ${!isLocked && onReplaceImage ? 'cursor-pointer hover:opacity-80' : ''}`}>
+      <div className={`flex items-center justify-center p-1 overflow-hidden relative pointer-events-none ${isVerticalSequence ? 'h-full aspect-square' : 'flex-1 w-full'}`}>
         {item.iconId ? (
           (() => {
             const IconComp = getIconComponent(item.iconId);
@@ -913,9 +1150,9 @@ const PictogramCard = ({ item, onRemove, onToggleComplete, onEditLabel, onReplac
 
       <div className={`text-center ${isVerticalSequence ? 'flex-1 text-left px-2' : 'mt-2 w-full min-h-[1.5em]'}`}>
         {isEditing && !isLocked && onEditLabel ? (
-          <input type="text" value={tempLabel} onChange={(e) => setTempLabel(e.target.value)} onBlur={saveLabel} onKeyDown={(e) => e.key === 'Enter' && saveLabel()} className="w-full text-sm font-bold bg-blue-50 dark:bg-slate-600 rounded px-1 outline-none border border-blue-300" autoFocus />
+          <input type="text" value={tempLabel} onClick={(e) => e.stopPropagation()} onChange={(e) => setTempLabel(e.target.value)} onBlur={saveLabel} onKeyDown={(e) => e.key === 'Enter' && saveLabel()} className="w-full text-sm font-bold bg-blue-50 dark:bg-slate-600 rounded px-1 outline-none border border-blue-300" autoFocus />
         ) : (
-          <p onClick={() => !isLocked && onEditLabel && setIsEditing(true)} className={`font-bold uppercase tracking-wide truncate ${!isLocked && onEditLabel ? 'cursor-text hover:text-blue-600 dark:hover:text-blue-400' : ''} ${item.completed ? 'line-through decoration-2 text-slate-400' : 'text-slate-800 dark:text-slate-200'} ${isVerticalSequence ? 'text-xl' : 'text-sm md:text-base'}`}>{item.label}</p>
+          <p onClick={(e) => { if(!isLocked && onEditLabel) { e.stopPropagation(); setIsEditing(true); }}} className={`font-bold uppercase tracking-wide truncate ${!isLocked && onEditLabel ? 'cursor-text hover:text-blue-600 dark:hover:text-blue-400' : ''} ${item.completed ? 'line-through decoration-2 text-slate-400' : 'text-slate-800 dark:text-slate-200'} ${isVerticalSequence ? 'text-xl' : 'text-sm md:text-base'}`}>{item.label}</p>
         )}
       </div>
     </div>
@@ -1154,6 +1391,13 @@ export default function App() {
   const [openMenuId, setOpenMenuId] = useState(null);
   const fileInputRef = useRef(null); 
   const [showHelp, setShowHelp] = useState(false);
+  const [activeItemId, setActiveItemId] = useState(null); // NUOVO STATO
+
+  const handleChildClick = (itemId) => {
+    setActiveItemId(itemId);
+    // Opzionale: Rimuovi l'evidenziazione dopo 2 secondi
+    setTimeout(() => setActiveItemId(null), 2000);
+    };
 
   useEffect(() => {
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) setDarkMode(true);
@@ -1336,6 +1580,12 @@ export default function App() {
   };
 
   const handleSearchSelect = async (newItemData) => {
+    // Determiniamo se siamo in modalità "Sostituzione" (Edit) o "Aggiunta" (Add)
+    const isReplacing = editingContext?.type === 'boardCover' || 
+                        editingContext?.type === 'tokenImage' || 
+                        editingContext?.type === 'rewardImage' || 
+                        (editingContext?.type === 'item' && editingContext.id);
+
     if (editingContext?.type === 'boardCover') {
       const boardToUpdate = await dbOperations.getBoard(editingContext.boardId);
       if (boardToUpdate) {
@@ -1350,11 +1600,10 @@ export default function App() {
     } else if (editingContext?.type === 'item' && editingContext.id) {
       setCurrentBoard(prev => {
         const copy = { ...prev };
-        // Aggiorniamo l'item ma PRESERVIAMO la label originale (l'ultimo attributo vince)
         const updateFn = (item) => item.id === editingContext.id ? { 
           ...item, 
           ...newItemData, 
-          label: item.label // <--- QUI STA LA MAGIA: Forziamo la label originale
+          label: item.label // Manteniamo la label originale in modifica
         } : item;
         
         if (copy.type === 'grid') copy.pages[activePageIndex].items = copy.pages[activePageIndex].items.map(updateFn);
@@ -1362,20 +1611,28 @@ export default function App() {
         return copy;
       });
     } else {
+      // --- MODALITÀ AGGIUNTA (Nuovi elementi) ---
       setCurrentBoard(prev => {
         const copy = { ...prev };
         if (copy.type === 'grid') {
           copy.pages[activePageIndex].items.push(newItemData);
         } else if (copy.type === 'sequence' || copy.type === 'story' || copy.type === 'pecs') {
-          // Ora gestisce anche story e pecs!
           if (!copy.items) copy.items = [];
           copy.items.push(newItemData);
         }
         return copy;
       });
     }
-    setEditingContext(null);
-    setShowSearch(false);
+
+    // LOGICA DI CHIUSURA INTELLIGENTE:
+    // Chiudiamo il modale SOLO se stavamo sostituendo un'immagine specifica.
+    // Se stavamo aggiungendo, lo lasciamo aperto per permettere inserimenti multipli.
+    if (isReplacing) {
+      setEditingContext(null);
+      setShowSearch(false);
+    }
+    // Se siamo in modalità aggiunta, NON facciamo nulla qui. 
+    // Il SearchModal gestirà il feedback visivo (spunta verde) autonomamente.
   };
 
   const removeItem = (itemId) => {
@@ -1951,13 +2208,45 @@ export default function App() {
               {/* Render Standard per Grid e Sequence */}
               {(currentBoard.type === 'grid' || currentBoard.type === 'sequence') && activeItems.length > 0 && (
                 currentBoard.type === 'grid' ? (
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">{activeItems.map(item => <PictogramCard key={item.id} item={item} mode="grid" isLocked={isLocked} onRemove={removeItem} onReplaceImage={(id) => { setEditingContext({type:'item', id}); setShowSearch(true); }} onEditLabel={updateLabel} />)}</div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    {activeItems.map(item => (
+                      <PictogramCard 
+                        key={item.id} 
+                        item={item} 
+                        mode="grid" 
+                        isLocked={isLocked} 
+                        
+                        // NUOVE PROPS PER HIGHLIGHT
+                        isActive={activeItemId === item.id}
+                        onClick={handleChildClick}
+                        
+                        onRemove={removeItem} 
+                        onReplaceImage={(id) => { setEditingContext({type:'item', id}); setShowSearch(true); }} 
+                        onEditLabel={updateLabel} 
+                      />
+                    ))}
+                  </div>
                 ) : (
+                  // ... (Sequenza/Agenda rimane simile, aggiungi le props se vuoi evidenziare anche lì)
                   <div className={`${currentBoard.settings?.orientation === 'vertical' ? 'flex flex-col gap-4 w-full max-w-md mx-auto' : 'flex gap-4 overflow-x-auto pb-6 pt-2 snap-x px-2 h-full items-center w-full'}`}>
                     {activeItems.map((item, index) => (
                       <div key={item.id} draggable={!isLocked} onDragStart={(e) => handleDragStart(e, index)} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={handleDragEnd} onDragOver={(e) => e.preventDefault()} className={`${currentBoard.settings?.orientation === 'vertical' ? 'w-full' : 'snap-center'}`}>
-                        <PictogramCard item={item} mode="sequence" orientation={currentBoard.settings?.orientation} isLocked={isLocked} onRemove={removeItem} onReplaceImage={(id) => { setEditingContext({type:'item', id}); setShowSearch(true); }} onEditLabel={updateLabel} onToggleComplete={toggleComplete} />
-                        {index < activeItems.length - 1 && <div className="flex justify-center p-2 text-slate-300">{currentBoard.settings?.orientation === 'vertical' ? <ArrowDown className="w-6 h-6"/> : <ArrowRight className="w-6 h-6"/>}</div>}
+                        <PictogramCard 
+                           item={item} 
+                           mode="sequence" 
+                           orientation={currentBoard.settings?.orientation} 
+                           isLocked={isLocked} 
+                           
+                           // NUOVE PROPS
+                           isActive={activeItemId === item.id}
+                           onClick={handleChildClick}
+                           
+                           onRemove={removeItem} 
+                           onReplaceImage={(id) => { setEditingContext({type:'item', id}); setShowSearch(true); }} 
+                           onEditLabel={updateLabel} 
+                           onToggleComplete={toggleComplete} 
+                        />
+                        {/* ... frecce ... */}
                       </div>
                     ))}
                   </div>
@@ -1968,9 +2257,16 @@ export default function App() {
           </div>
         )}
       </main>
-      <SearchModal isOpen={showSearch} onClose={() => { setShowSearch(false); setEditingContext(null); }} onSelect={handleSearchSelect} initialQuery={editingContext?.initialTerm} />
+      <SearchModal 
+         isOpen={showSearch} 
+         onClose={() => { setShowSearch(false); setEditingContext(null); }} 
+         onSelect={handleSearchSelect} 
+         initialQuery={editingContext?.initialTerm}
+         boards={boards} // <--- AGGIUNTO QUI: Passiamo la lista progetti al modale
+      />
         {/* AGGIUNGI QUESTO: */}
       <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
+        
     </div>
   );
 }
