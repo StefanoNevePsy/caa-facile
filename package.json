@@ -43,18 +43,28 @@
   "build": {
     "appId": "com.caafacile.app",
     "productName": "CAA Facile",
-    "mac": {
-      "category": "public.app-category.education",
-      "target": "dmg",
-      "hardenedRuntime": true
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "dist/**/*",
       "electron-main.js",
       "public/**/*"
     ],
-    "directories": {
-      "output": "release"
+    "mac": {
+      "category": "public.app-category.education",
+      "target": "dmg",
+      "icon": "build/icon.icns",  // <--- PUNTA ALLA TUA ICONA MAC
+      "hardenedRuntime": true
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"    // <--- PUNTA ALLA TUA ICONA WINDOWS
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     }
   }
 }
