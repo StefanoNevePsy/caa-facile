@@ -55,12 +55,12 @@
     "mac": {
       "category": "public.app-category.education",
       "target": "dmg",
-      "icon": "build/icon.icns",  // <--- PUNTA ALLA TUA ICONA MAC
+      "icon": "build/icon.icns",
       "hardenedRuntime": true
     },
     "win": {
       "target": "nsis",
-      "icon": "build/icon.ico"    // <--- PUNTA ALLA TUA ICONA WINDOWS
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
