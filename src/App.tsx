@@ -409,7 +409,7 @@ import { pipeline, env, AutoModel, AutoProcessor, RawImage, Tensor } from '@xeno
 
 env.allowRemoteModels = false;
 env.allowLocalModels = true;
-env.localModelPath = '/models/';
+env.localModelPath = import.meta.env.PROD ? './models/' : '/models/';
 
 const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableShadow) => {
   try {
