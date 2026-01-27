@@ -419,7 +419,7 @@ const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableS
       currentUrl = await getCroppedImg(originalBlobUrl, cropArea);
     }
 
-    let resultImageElement; // Useremo elementi Image standard HTML
+    let resultImageElement;
 
     if (enableAI) {
       // --- CONFIGURAZIONE AI ---
@@ -432,38 +432,52 @@ const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableS
         config: { model_type: 'segformer' } 
       });
 
-      // B. Carichiamo il processore
+      // B. PRE-PROCESSING MANUALE (FORCE STRETCH 1024x1024)
+      // Creiamo noi l'immagine 1024x1024 stirata per evitare crash (OrtRun error) 
+      // e problemi di padding (bordi bianchi/neri).
+      const inputSize = 1024;
+      const stretchCanvas = document.createElement('canvas');
+      stretchCanvas.width = inputSize;
+      stretchCanvas.height = inputSize;
+      const stretchCtx = stretchCanvas.getContext('2d');
+      const tempImg = await loadImageElement(currentUrl);
+      // Disegniamo l'immagine stirandola per riempire tutto il quadrato 1024x1024
+      stretchCtx.drawImage(tempImg, 0, 0, inputSize, inputSize);
+      // Convertiamo in Blob URL per passarla a Xenova
+      const fixedInputUrl = stretchCanvas.toDataURL('image/jpeg', 0.8);
+
+      // C. Carichiamo il processore (DISABILITIAMO il resize automatico)
       const processor = await AutoProcessor.from_pretrained(modelId, {
-    local_files_only: true,
-    config: {
-        do_normalize: true,
-        do_rescale: true,
+        local_files_only: true,
+        config: {
+            do_normalize: true,
+            do_pad: false,      // Disabilitato: ci pensiamo noi
+            do_resize: false,   // Disabilitato: l'immagine è già 1024x1024
+            do_rescale: true,
             image_mean: [0.5, 0.5, 0.5],
             feature_extractor_type: "ImageFeatureExtractor",
             image_std: [1, 1, 1],
             resample: 2,
             rescale_factor: 0.00392156862745098,
-            size: { width: 1024, height: 1024 }
+            size: { width: inputSize, height: inputSize }
         }
       });
 
-      // C. Prepariamo l'input
-      const image = await RawImage.fromURL(currentUrl);
+      // D. Prepariamo l'input (usando l'immagine già stirata)
+      const image = await RawImage.fromURL(fixedInputUrl);
       const { pixel_values } = await processor(image);
 
-      // D. Inferenza (AI)
+      // E. Inferenza (AI)
       const { output } = await model({ input: pixel_values });
 
-      // --- RICOSTRUZIONE MANUALE (NO createBitmap) ---
+      // --- RICOSTRUZIONE MANUALE ---
       
       // 1. Dati Maschera
       const rawData = output[0].mul(255).to('uint8').data;
-      const width = 1024;
-      const height = 1024;
-      const pixelCount = width * height;
+      const pixelCount = inputSize * inputSize;
       const rgbaData = new Uint8ClampedArray(pixelCount * 4);
       
-      // 2. Creiamo il buffer RGBA per la maschera
+      // 2. Creiamo il buffer RGBA per la maschera (che sarà 1024x1024 stirata)
       for (let i = 0; i < pixelCount; i++) {
         const val = rawData[i]; 
         rgbaData[i * 4] = 0;     
@@ -472,11 +486,10 @@ const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableS
         rgbaData[i * 4 + 3] = val; // Alpha
       }
       
-      const maskImageData = new ImageData(rgbaData, width, height);
+      const maskImageData = new ImageData(rgbaData, inputSize, inputSize);
 
-      // E. Applicazione Maschera (Blending) su Canvas
+      // F. Applicazione Maschera (Blending) su Canvas
       const canvas = document.createElement('canvas');
-      // Carichiamo l'originale usando il metodo sicuro per Android
       const originalImgEl = await loadImageElement(currentUrl);
       
       canvas.width = originalImgEl.width;
@@ -486,24 +499,26 @@ const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableS
       // Disegna immagine originale
       ctx.drawImage(originalImgEl, 0, 0);
 
-      // Prepara la maschera
+      // Prepara la maschera su un canvas temporaneo
       const maskCanvas = document.createElement('canvas');
-      maskCanvas.width = width; 
-      maskCanvas.height = height;
+      maskCanvas.width = inputSize; 
+      maskCanvas.height = inputSize;
       const maskCtx = maskCanvas.getContext('2d');
       maskCtx.putImageData(maskImageData, 0, 0);
 
-      // Applica la maschera
+      // Applica la maschera:
+      // Qui avviene la magia: disegniamo la maschera (che è 1024x1024 stirata)
+      // sopra l'immagine originale (che ha dimensioni varie), forzandola ad adattarsi.
+      // Poiché entrambe subiscono lo stesso stiramento relativo, combaciano perfettamente.
       ctx.globalCompositeOperation = 'destination-in';
-      ctx.drawImage(maskCanvas, 0, 0, width, height, 0, 0, originalImgEl.width, originalImgEl.height);
+      ctx.drawImage(maskCanvas, 0, 0, inputSize, inputSize, 0, 0, originalImgEl.width, originalImgEl.height);
 
-      // Risultato intermedio come URL per ricaricarlo come elemento
       const processedBlob = await new Promise(r => canvas.toBlob(r));
       const processedUrl = URL.createObjectURL(processedBlob);
       resultImageElement = await loadImageElement(processedUrl);
 
     } else {
-      // FALLBACK (No AI) - Caricamento sicuro
+      // FALLBACK (No AI)
       resultImageElement = await loadImageElement(currentUrl);
     }
 
@@ -516,14 +531,12 @@ const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableS
 
     fCtx.clearRect(0, 0, size, size);
 
-    // Centratura e Scala
     const scaleFactor = Math.min((size * 0.9) / resultImageElement.width, (size * 0.9) / resultImageElement.height);
     const w = resultImageElement.width * scaleFactor;
     const h = resultImageElement.height * scaleFactor;
     const x = (size - w) / 2;
     const y = (size - h) / 2;
 
-    // Ombra
     if (enableShadow) {
       fCtx.save();
       fCtx.translate(x + w / 2, y + h); 
@@ -535,7 +548,6 @@ const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableS
       fCtx.restore();
     }
 
-    // Disegna l'elemento immagine finale
     fCtx.drawImage(resultImageElement, x, y, w, h);
 
     return new Promise(resolve => finalCanvas.toBlob(resolve, 'image/png'));
@@ -543,7 +555,6 @@ const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableS
   } catch (error) {
     console.error("Errore elaborazione immagine:", error);
     alert("Errore: " + error.message);
-    // Fallback sicuro in caso di errore
     return processAdvancedImage(originalBlobUrl, cropArea, false, enableShadow);
   }
 };
