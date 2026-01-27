@@ -437,7 +437,6 @@ const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableS
     local_files_only: true,
     config: {
         do_normalize: true,
-        do_pad: true, // Cambiato in true per gestire meglio i riquadri bianchi esterni
         do_rescale: true,
             image_mean: [0.5, 0.5, 0.5],
             feature_extractor_type: "ImageFeatureExtractor",
