@@ -1,28 +1,32 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { 
-  Plus, Search, Save, Image as ImageIcon, Trash2, ArrowLeft, Moon, Sun, 
-  LayoutGrid, ListOrdered, CheckCircle2, X, Upload, Settings, Copy, 
-  ArrowDown, ArrowRight, FilePlus, Lock, Unlock, 
+import {
+  Plus, Search, Save, Image as ImageIcon, Trash2, ArrowLeft, Moon, Sun,
+  LayoutGrid, ListOrdered, CheckCircle2, X, Upload, Settings, Copy,
+  ArrowDown, ArrowRight, FilePlus, Lock, Unlock,
   RotateCcw,             // Icona normale
   RotateCcw as ResetIcon, // <--- ECCO IL FIX: Creiamo l'alias per il Timer
   Link as LinkIcon,
-  Trophy, Star, Globe, MoreVertical, Filter, SortAsc, SortDesc, Edit3, 
-  Heart, ThumbsUp, Smile, Zap, Crown, Medal, Rocket, Music, Car, Cat, Dog, 
-  Flower, Palette, Download, Upload as UploadIcon, Camera, HelpCircle, 
+  Trophy, Star, Globe, MoreVertical, Filter, SortAsc, SortDesc, Edit3,
+  Heart, ThumbsUp, Smile, Zap, Crown, Medal, Rocket, Music, Car, Cat, Dog,
+  Flower, Palette, Download, Upload as UploadIcon, Camera, HelpCircle,
   Scissors, Printer, Book, Wand2, Crop as CropIcon, Layers, BookOpen,
-  Timer, Play, Pause, Volume2, ChevronUp, 
-  ChevronDown // Icone per il Timer e Suono
+  Timer, Play, Pause, Volume2, ChevronUp,
+  ChevronDown, Wifi, Mouse, CheckSquare // Icone per il Timer e Suono
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { removeBackground } from "@imgly/background-removal";
+import SyncBackupModal from './SyncBackupModal';
+import { App as CapApp } from '@capacitor/app';
+import type { PluginListenerHandle } from '@capacitor/core';
 // Aggiungi questi import in alto
 import { polyfill } from "mobile-drag-drop";
 import { scrollBehaviourDragImageTranslateOverride } from "mobile-drag-drop/scroll-behaviour";
 import "mobile-drag-drop/default.css";
+import { pipeline, env, AutoModel, AutoProcessor, RawImage, Tensor } from '@huggingface/transformers';
 
 // Chiama questa funzione subito fuori dal componente, o dentro uno useEffect in App
 polyfill({
-    dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride
+  dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride
 });
 
 /**
@@ -31,39 +35,67 @@ polyfill({
  * ==========================================
  */
 const DB_NAME = 'CaaAppDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incremented for sounds store
 
 // Mappa delle icone predefinite con stili coordinati (Sfondo, Bordo, Icona)
 // Mappa delle icone predefinite con stili coordinati (Sfondo, Bordo, Icona, RGB per timer)
 const PRESET_ICONS = [
-  { id: 'star', label: 'Stella', icon: Star, rgb: {r:245, g:158, b:11}, // Amber
-    style: { bg: 'bg-amber-100', border: 'border-amber-400', icon: 'text-amber-500 fill-amber-400' } },
-  { id: 'heart', label: 'Cuore', icon: Heart, rgb: {r:239, g:68, b:68}, // Red
-    style: { bg: 'bg-red-100', border: 'border-red-400', icon: 'text-red-500 fill-red-500' } },
-  { id: 'thumbsup', label: 'Super', icon: ThumbsUp, rgb: {r:37, g:99, b:235}, // Blue
-    style: { bg: 'bg-blue-100', border: 'border-blue-400', icon: 'text-blue-600 fill-blue-400' } },
-  { id: 'smile', label: 'Sorriso', icon: Smile, rgb: {r:202, g:138, b:4}, // Yellow
-    style: { bg: 'bg-yellow-100', border: 'border-yellow-400', icon: 'text-yellow-600 fill-yellow-200' } },
-  { id: 'crown', label: 'Re/Regina', icon: Crown, rgb: {r:147, g:51, b:234}, // Purple
-    style: { bg: 'bg-purple-100', border: 'border-purple-400', icon: 'text-purple-600 fill-purple-400' } },
-  { id: 'trophy', label: 'Coppa', icon: Trophy, rgb: {r:234, g:179, b:8}, // Yellow-500
-    style: { bg: 'bg-yellow-50', border: 'border-yellow-500', icon: 'text-yellow-600 fill-yellow-400' } },
-  { id: 'medal', label: 'Medaglia', icon: Medal, rgb: {r:249, g:115, b:22}, // Orange
-    style: { bg: 'bg-orange-100', border: 'border-orange-400', icon: 'text-orange-600 fill-orange-400' } },
-  { id: 'rocket', label: 'Razzo', icon: Rocket, rgb: {r:79, g:70, b:229}, // Indigo
-    style: { bg: 'bg-indigo-100', border: 'border-indigo-400', icon: 'text-indigo-600 fill-indigo-400' } },
-  { id: 'zap', label: 'Fulmine', icon: Zap, rgb: {r:234, g:179, b:8}, // Yellow
-    style: { bg: 'bg-yellow-100', border: 'border-yellow-400', icon: 'text-yellow-500 fill-yellow-500' } },
-  { id: 'flower', label: 'Fiore', icon: Flower, rgb: {r:236, g:72, b:153}, // Pink
-    style: { bg: 'bg-pink-100', border: 'border-pink-400', icon: 'text-pink-500 fill-pink-400' } },
-  { id: 'cat', label: 'Gatto', icon: Cat, rgb: {r:120, g:113, b:108}, // Stone
-    style: { bg: 'bg-stone-200', border: 'border-stone-400', icon: 'text-stone-600 fill-stone-400' } },
-  { id: 'dog', label: 'Cane', icon: Dog, rgb: {r:146, g:64, b:14}, // Amber-800
-    style: { bg: 'bg-amber-200', border: 'border-amber-600', icon: 'text-amber-800 fill-amber-700' } },
-  { id: 'car', label: 'Auto', icon: Car, rgb: {r:220, g:38, b:38}, // Red
-    style: { bg: 'bg-red-50', border: 'border-red-500', icon: 'text-red-600 fill-red-600' } },
-  { id: 'music', label: 'Musica', icon: Music, rgb: {r:14, g:165, b:233}, // Sky
-    style: { bg: 'bg-sky-100', border: 'border-sky-400', icon: 'text-sky-600 fill-sky-400' } },
+  {
+    id: 'star', label: 'Stella', icon: Star, rgb: { r: 245, g: 158, b: 11 }, // Amber
+    style: { bg: 'bg-amber-100', border: 'border-amber-400', icon: 'text-amber-500 fill-amber-400' }
+  },
+  {
+    id: 'heart', label: 'Cuore', icon: Heart, rgb: { r: 239, g: 68, b: 68 }, // Red
+    style: { bg: 'bg-red-100', border: 'border-red-400', icon: 'text-red-500 fill-red-500' }
+  },
+  {
+    id: 'thumbsup', label: 'Super', icon: ThumbsUp, rgb: { r: 37, g: 99, b: 235 }, // Blue
+    style: { bg: 'bg-blue-100', border: 'border-blue-400', icon: 'text-blue-600 fill-blue-400' }
+  },
+  {
+    id: 'smile', label: 'Sorriso', icon: Smile, rgb: { r: 202, g: 138, b: 4 }, // Yellow
+    style: { bg: 'bg-yellow-100', border: 'border-yellow-400', icon: 'text-yellow-600 fill-yellow-200' }
+  },
+  {
+    id: 'crown', label: 'Re/Regina', icon: Crown, rgb: { r: 147, g: 51, b: 234 }, // Purple
+    style: { bg: 'bg-purple-100', border: 'border-purple-400', icon: 'text-purple-600 fill-purple-400' }
+  },
+  {
+    id: 'trophy', label: 'Coppa', icon: Trophy, rgb: { r: 234, g: 179, b: 8 }, // Yellow-500
+    style: { bg: 'bg-yellow-50', border: 'border-yellow-500', icon: 'text-yellow-600 fill-yellow-400' }
+  },
+  {
+    id: 'medal', label: 'Medaglia', icon: Medal, rgb: { r: 249, g: 115, b: 22 }, // Orange
+    style: { bg: 'bg-orange-100', border: 'border-orange-400', icon: 'text-orange-600 fill-orange-400' }
+  },
+  {
+    id: 'rocket', label: 'Razzo', icon: Rocket, rgb: { r: 79, g: 70, b: 229 }, // Indigo
+    style: { bg: 'bg-indigo-100', border: 'border-indigo-400', icon: 'text-indigo-600 fill-indigo-400' }
+  },
+  {
+    id: 'zap', label: 'Fulmine', icon: Zap, rgb: { r: 234, g: 179, b: 8 }, // Yellow
+    style: { bg: 'bg-yellow-100', border: 'border-yellow-400', icon: 'text-yellow-500 fill-yellow-500' }
+  },
+  {
+    id: 'flower', label: 'Fiore', icon: Flower, rgb: { r: 236, g: 72, b: 153 }, // Pink
+    style: { bg: 'bg-pink-100', border: 'border-pink-400', icon: 'text-pink-500 fill-pink-400' }
+  },
+  {
+    id: 'cat', label: 'Gatto', icon: Cat, rgb: { r: 120, g: 113, b: 108 }, // Stone
+    style: { bg: 'bg-stone-200', border: 'border-stone-400', icon: 'text-stone-600 fill-stone-400' }
+  },
+  {
+    id: 'dog', label: 'Cane', icon: Dog, rgb: { r: 146, g: 64, b: 14 }, // Amber-800
+    style: { bg: 'bg-amber-200', border: 'border-amber-600', icon: 'text-amber-800 fill-amber-700' }
+  },
+  {
+    id: 'car', label: 'Auto', icon: Car, rgb: { r: 220, g: 38, b: 38 }, // Red
+    style: { bg: 'bg-red-50', border: 'border-red-500', icon: 'text-red-600 fill-red-600' }
+  },
+  {
+    id: 'music', label: 'Musica', icon: Music, rgb: { r: 14, g: 165, b: 233 }, // Sky
+    style: { bg: 'bg-sky-100', border: 'border-sky-400', icon: 'text-sky-600 fill-sky-400' }
+  },
 ];
 
 // Preset per il Timer (Secondi)
@@ -127,31 +159,31 @@ const getDominantColor = async (imageUrl) => {
     img.onload = () => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      canvas.width = 50; 
+      canvas.width = 50;
       canvas.height = 50;
       ctx.drawImage(img, 0, 0, 50, 50);
       const data = ctx.getImageData(0, 0, 50, 50).data;
-      
+
       let r = 0, g = 0, b = 0, count = 0;
 
       for (let i = 0; i < data.length; i += 4) {
         // Ignoriamo i pixel trasparenti (Alpha < 128)
-        if (data[i+3] > 128) { 
+        if (data[i + 3] > 128) {
           r += data[i];
-          g += data[i+1];
-          b += data[i+2];
+          g += data[i + 1];
+          b += data[i + 2];
           count++;
         }
       }
 
       if (count === 0) resolve({ r: 240, g: 240, b: 240 });
-      else resolve({ r: r/count, g: g/count, b: b/count });
+      else resolve({ r: r / count, g: g / count, b: b / count });
     };
     img.onerror = () => resolve({ r: 200, g: 200, b: 200 });
   });
 };
 
-const blobToBase64 = (blob) => {
+export const blobToBase64 = (blob) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => resolve(reader.result);
@@ -160,7 +192,7 @@ const blobToBase64 = (blob) => {
   });
 };
 
-const base64ToBlob = async (base64) => {
+export const base64ToBlob = async (base64) => {
   const res = await fetch(base64);
   return await res.blob();
 };
@@ -176,7 +208,7 @@ const openDB = () => {
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = (event) => {
-      const db = event.target.result;
+      const db = (event.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains('boards')) {
         const store = db.createObjectStore('boards', { keyPath: 'id', autoIncrement: true });
         store.createIndex('updatedAt', 'updatedAt', { unique: false });
@@ -185,11 +217,14 @@ const openDB = () => {
         const store = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
         store.createIndex('sourceId', 'sourceId', { unique: false });
       }
+      if (!db.objectStoreNames.contains('sounds')) {
+        db.createObjectStore('sounds', { keyPath: 'id' });
+      }
     };
   });
 };
 
-const dbOperations = {
+export const dbOperations = {
   async getAllBoards() {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -200,7 +235,7 @@ const dbOperations = {
       request.onerror = () => reject(request.error);
     });
   },
-  
+
   async getAllImages() {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -217,7 +252,7 @@ const dbOperations = {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(['boards'], 'readwrite');
       const store = transaction.objectStore('boards');
-      const { id, ...boardData } = board; 
+      const { id, ...boardData } = board;
       const request = store.add(boardData);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -280,13 +315,62 @@ const dbOperations = {
     });
   },
 
-  async clearDatabase() {
-    const db = await openDB();
+  async putImage(imageRecord) {
+    const db: any = await openDB();
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction(['boards', 'images'], 'readwrite');
-      transaction.objectStore('boards').clear();
-      transaction.objectStore('images').clear();
-      transaction.oncomplete = () => resolve();
+      const transaction = db.transaction(['images'], 'readwrite');
+      const store = transaction.objectStore('images');
+      const request = store.put(imageRecord);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  async getAllSounds() {
+    const db: any = await openDB();
+    return new Promise((resolve, reject) => {
+      if (!db.objectStoreNames.contains('sounds')) return resolve([]);
+      const transaction = db.transaction(['sounds'], 'readonly');
+      const store = transaction.objectStore('sounds');
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  async putSound(soundRecord) {
+    const db: any = await openDB();
+    return new Promise((resolve, reject) => {
+      if (!db.objectStoreNames.contains('sounds')) return resolve(null);
+      const transaction = db.transaction(['sounds'], 'readwrite');
+      const store = transaction.objectStore('sounds');
+      const request = store.put(soundRecord);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  async deleteSound(id) {
+    const db: any = await openDB();
+    return new Promise((resolve, reject) => {
+      if (!db.objectStoreNames.contains('sounds')) return resolve(null);
+      const transaction = db.transaction(['sounds'], 'readwrite');
+      const store = transaction.objectStore('sounds');
+      const request = store.delete(id);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  async clearDatabase() {
+    const db: any = await openDB();
+    return new Promise((resolve, reject) => {
+      const stores = Array.from(db.objectStoreNames);
+      const transaction = db.transaction(stores, 'readwrite');
+      if (stores.includes('boards')) transaction.objectStore('boards').clear();
+      if (stores.includes('images')) transaction.objectStore('images').clear();
+      if (stores.includes('sounds')) transaction.objectStore('sounds').clear();
+      transaction.oncomplete = () => resolve(null);
       transaction.onerror = () => reject(transaction.error);
     });
   }
@@ -331,9 +415,9 @@ const saveLocalImage = async (file) => {
 
 const getImageUrl = async (sourceId) => {
   if (!sourceId) return null;
-  const idStr = sourceId.toString(); 
-  if (idStr.startsWith('http')) return idStr; 
-  if (idStr.startsWith('preset-')) return null; 
+  const idStr = sourceId.toString();
+  if (idStr.startsWith('http')) return idStr;
+  if (idStr.startsWith('preset-')) return null;
   const record = await dbOperations.getImageBySourceId(idStr);
   if (record && record.blob) {
     return URL.createObjectURL(record.blob);
@@ -351,7 +435,7 @@ const getImageUrl = async (sourceId) => {
 const getCroppedImg = (imageSrc, pixelCrop) => {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    
+
     // FIX CRUCIALE: Usiamo crossOrigin SOLO se è un URL web remoto.
     // Se è "data:..." (Base64) o "blob:..." (Locale), NON dobbiamo metterlo, altrimenti Android blocca tutto.
     if (typeof imageSrc === 'string' && imageSrc.startsWith('http') && !imageSrc.includes('localhost')) {
@@ -365,22 +449,22 @@ const getCroppedImg = (imageSrc, pixelCrop) => {
       const ctx = canvas.getContext('2d');
 
       ctx.drawImage(
-        image, 
-        -pixelCrop.x, 
-        -pixelCrop.y, 
-        image.width, 
+        image,
+        -pixelCrop.x,
+        -pixelCrop.y,
+        image.width,
         image.height
       );
 
       canvas.toBlob((blob) => {
         if (!blob) {
-            reject(new Error("Errore creazione blob ritaglio"));
-            return;
+          reject(new Error("Errore creazione blob ritaglio"));
+          return;
         }
         resolve(URL.createObjectURL(blob));
       }, 'image/png');
     };
-    
+
     image.onerror = (error) => reject(new Error("Impossibile caricare l'immagine per il ritaglio."));
     image.src = imageSrc;
   });
@@ -390,19 +474,18 @@ const getCroppedImg = (imageSrc, pixelCrop) => {
 const loadImageElement = (src) => {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    
+
     // FIX CRUCIALE: Idem come sopra, niente CORS per file locali
     if (typeof src === 'string' && src.startsWith('http') && !src.includes('localhost')) {
       img.crossOrigin = "anonymous";
     }
-    
+
     img.onload = () => resolve(img);
     img.onerror = (e) => reject(new Error("Errore caricamento immagine (formato non supportato o errore rete)"));
     img.src = src;
   });
 };
 
-import { pipeline, env, AutoModel, AutoProcessor, RawImage, Tensor } from '@xenova/transformers';
 
 // Assicurati che gli import siano corretti:
 // import { env, AutoModel, AutoProcessor, RawImage } from '@xenova/transformers';
@@ -411,150 +494,167 @@ env.allowRemoteModels = false;
 env.allowLocalModels = true;
 env.localModelPath = import.meta.env.PROD ? './models/' : '/models/';
 
+// Assicurati che env.allowLocalModels sia true in alto nel file
+// env.allowLocalModels = true;
+// env.localModelPath = '/models/'; 
+
 const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableShadow) => {
   try {
-    // 1. Ritaglio preliminare (se necessario)
-    let currentUrl = originalBlobUrl;
-    if (cropArea) {
-      currentUrl = await getCroppedImg(originalBlobUrl, cropArea);
-    }
-
-    let resultImageElement;
+    // 1. CARICAMENTO IMMAGINE ORIGINALE
+    const originalImgEl = await loadImageElement(originalBlobUrl);
+    let sourceForCropping = originalImgEl;
 
     if (enableAI) {
-      // --- CONFIGURAZIONE AI ---
-      const modelId = 'rmbg-1.4-v2'; 
+      const modelId = 'Xenova/rmbg-1.4';
+      env.allowLocalModels = true;
+      env.allowRemoteModels = false;
+      env.localModelPath = '/models/';
 
-      // A. Carichiamo il modello
-      const model = await AutoModel.from_pretrained(modelId, {
-        quantized: true,
-        local_files_only: true,
-        config: { model_type: 'segformer' } 
-      });
+      let model, processor;
 
-      // B. PRE-PROCESSING MANUALE (FORCE STRETCH 1024x1024)
-      // Creiamo noi l'immagine 1024x1024 stirata per evitare crash (OrtRun error) 
-      // e problemi di padding (bordi bianchi/neri).
+      console.log("Avvio AI con Soglia Aggressiva...");
+
+      try {
+        model = await AutoModel.from_pretrained(modelId, { device: 'webgpu', quantized: false, file: 'onnx/model.onnx' });
+      } catch (gpuError) {
+        model = await AutoModel.from_pretrained(modelId, { device: 'wasm', quantized: false, file: 'onnx/model.onnx' });
+      }
+
+      processor = await AutoProcessor.from_pretrained(modelId, { local_files_only: true });
+
+      // 2. PREPARAZIONE INPUT (LETTERBOXING 1024x1024)
       const inputSize = 1024;
-      const stretchCanvas = document.createElement('canvas');
-      stretchCanvas.width = inputSize;
-      stretchCanvas.height = inputSize;
-      const stretchCtx = stretchCanvas.getContext('2d');
-      const tempImg = await loadImageElement(currentUrl);
-      // Disegniamo l'immagine stirandola per riempire tutto il quadrato 1024x1024
-      stretchCtx.drawImage(tempImg, 0, 0, inputSize, inputSize);
-      // Convertiamo in Blob URL per passarla a Xenova
-      const fixedInputUrl = stretchCanvas.toDataURL('image/jpeg', 0.8);
+      const processingCanvas = document.createElement('canvas');
+      processingCanvas.width = inputSize;
+      processingCanvas.height = inputSize;
+      const procCtx = processingCanvas.getContext('2d');
 
-      // C. Carichiamo il processore (DISABILITIAMO il resize automatico)
-      const processor = await AutoProcessor.from_pretrained(modelId, {
-        local_files_only: true,
-        config: {
-            do_normalize: true,
-            do_pad: false,      // Disabilitato: ci pensiamo noi
-            do_resize: false,   // Disabilitato: l'immagine è già 1024x1024
-            do_rescale: true,
-            image_mean: [0.5, 0.5, 0.5],
-            feature_extractor_type: "ImageFeatureExtractor",
-            image_std: [1, 1, 1],
-            resample: 2,
-            rescale_factor: 0.00392156862745098,
-            size: { width: inputSize, height: inputSize }
-        }
-      });
+      const originalWidth = originalImgEl.width;
+      const originalHeight = originalImgEl.height;
 
-      // D. Prepariamo l'input (usando l'immagine già stirata)
-      const image = await RawImage.fromURL(fixedInputUrl);
+      const scale = Math.min(inputSize / originalWidth, inputSize / originalHeight);
+      const scaledWidth = Math.round(originalWidth * scale);
+      const scaledHeight = Math.round(originalHeight * scale);
+      const offsetX = Math.round((inputSize - scaledWidth) / 2);
+      const offsetY = Math.round((inputSize - scaledHeight) / 2);
+
+      procCtx.drawImage(originalImgEl, offsetX, offsetY, scaledWidth, scaledHeight);
+
+      const preparedBlob = await new Promise(r => processingCanvas.toBlob(r, 'image/jpeg', 0.95));
+      const preparedUrl = URL.createObjectURL(preparedBlob);
+      const image = await RawImage.fromURL(preparedUrl);
+
+      // 3. INFERENZA
       const { pixel_values } = await processor(image);
-
-      // E. Inferenza (AI)
       const { output } = await model({ input: pixel_values });
 
-      // --- RICOSTRUZIONE MANUALE ---
-      
-      // 1. Dati Maschera
-      const rawData = output[0].mul(255).to('uint8').data;
+      // 4. POST-PROCESSING CON SOGLIA (IL SEGRETO)
+      const maskTensor = output[0].mul(255).to('uint8');
+      const { data } = maskTensor;
       const pixelCount = inputSize * inputSize;
       const rgbaData = new Uint8ClampedArray(pixelCount * 4);
-      
-      // 2. Creiamo il buffer RGBA per la maschera (che sarà 1024x1024 stirata)
+
+      // SOGLIA DI TAGLIO (0-255)
+      // Più è alta, più rimuove lo sfondo (ma rischia di mangiare bordi sottili).
+      // 180 è un buon compromesso per eliminare aloni bianchi.
+      const ALPHA_THRESHOLD = 180;
+
       for (let i = 0; i < pixelCount; i++) {
-        const val = rawData[i]; 
-        rgbaData[i * 4] = 0;     
-        rgbaData[i * 4 + 1] = 0; 
-        rgbaData[i * 4 + 2] = 0; 
-        rgbaData[i * 4 + 3] = val; // Alpha
+        let val = data[i];
+
+        // LOGICA DI PULIZIA:
+        // Se l'IA non è sicura al 70% (180/255), consideralo sfondo e rendilo trasparente.
+        if (val < ALPHA_THRESHOLD) {
+          val = 0;
+        } else {
+          // Opzionale: ammorbidisci leggermente i bordi che superano la soglia
+          // per evitare l'effetto "pixellato" stile paint
+          val = 255;
+        }
+
+        rgbaData[i * 4] = 0;
+        rgbaData[i * 4 + 1] = 0;
+        rgbaData[i * 4 + 2] = 0;
+        rgbaData[i * 4 + 3] = val; // Alpha filtrato
       }
-      
+
       const maskImageData = new ImageData(rgbaData, inputSize, inputSize);
 
-      // F. Applicazione Maschera (Blending) su Canvas
-      const canvas = document.createElement('canvas');
-      const originalImgEl = await loadImageElement(currentUrl);
-      
-      canvas.width = originalImgEl.width;
-      canvas.height = originalImgEl.height;
-      const ctx = canvas.getContext('2d');
+      // 5. APPLICAZIONE MASCHERA
+      const blendingCanvas = document.createElement('canvas');
+      blendingCanvas.width = originalWidth;
+      blendingCanvas.height = originalHeight;
+      const ctx = blendingCanvas.getContext('2d');
 
-      // Disegna immagine originale
       ctx.drawImage(originalImgEl, 0, 0);
 
-      // Prepara la maschera su un canvas temporaneo
       const maskCanvas = document.createElement('canvas');
-      maskCanvas.width = inputSize; 
+      maskCanvas.width = inputSize;
       maskCanvas.height = inputSize;
       const maskCtx = maskCanvas.getContext('2d');
       maskCtx.putImageData(maskImageData, 0, 0);
 
-      // Applica la maschera:
-      // Qui avviene la magia: disegniamo la maschera (che è 1024x1024 stirata)
-      // sopra l'immagine originale (che ha dimensioni varie), forzandola ad adattarsi.
-      // Poiché entrambe subiscono lo stesso stiramento relativo, combaciano perfettamente.
       ctx.globalCompositeOperation = 'destination-in';
-      ctx.drawImage(maskCanvas, 0, 0, inputSize, inputSize, 0, 0, originalImgEl.width, originalImgEl.height);
+      ctx.drawImage(
+        maskCanvas,
+        offsetX, offsetY, scaledWidth, scaledHeight,
+        0, 0, originalWidth, originalHeight
+      );
 
-      const processedBlob = await new Promise(r => canvas.toBlob(r));
-      const processedUrl = URL.createObjectURL(processedBlob);
-      resultImageElement = await loadImageElement(processedUrl);
-
-    } else {
-      // FALLBACK (No AI)
-      resultImageElement = await loadImageElement(currentUrl);
+      sourceForCropping = blendingCanvas;
+      URL.revokeObjectURL(preparedUrl);
     }
 
-    // --- Composizione Card Finale (500x500) ---
+    // 6. APPLICAZIONE CROP/ZOOM UTENTE
+    let croppedCanvas = sourceForCropping;
+    if (cropArea) {
+      const c = document.createElement('canvas');
+      c.width = cropArea.width;
+      c.height = cropArea.height;
+      const ctx = c.getContext('2d');
+
+      ctx.drawImage(
+        sourceForCropping,
+        -cropArea.x,
+        -cropArea.y,
+        sourceForCropping.width,
+        sourceForCropping.height
+      );
+      croppedCanvas = c;
+    }
+
+    // 7. COMPOSIZIONE FINALE
     const finalCanvas = document.createElement('canvas');
     const fCtx = finalCanvas.getContext('2d');
-    const size = 500; 
+    const size = 500;
     finalCanvas.width = size;
     finalCanvas.height = size;
-
     fCtx.clearRect(0, 0, size, size);
 
-    const scaleFactor = Math.min((size * 0.9) / resultImageElement.width, (size * 0.9) / resultImageElement.height);
-    const w = resultImageElement.width * scaleFactor;
-    const h = resultImageElement.height * scaleFactor;
+    const scaleFactor = Math.min((size * 0.9) / croppedCanvas.width, (size * 0.9) / croppedCanvas.height);
+    const w = croppedCanvas.width * scaleFactor;
+    const h = croppedCanvas.height * scaleFactor;
     const x = (size - w) / 2;
     const y = (size - h) / 2;
 
     if (enableShadow) {
       fCtx.save();
-      fCtx.translate(x + w / 2, y + h); 
-      fCtx.scale(1, 0.3); 
-      fCtx.transform(1, 0, -0.5, 1, 0, 0); 
+      fCtx.translate(x + w / 2, y + h);
+      fCtx.scale(1, 0.3);
+      fCtx.transform(1, 0, -0.5, 1, 0, 0);
       fCtx.filter = 'blur(10px)';
-      fCtx.fillStyle = 'rgba(0,0,0,0.4)'; 
-      fCtx.fillRect(-w/2, -h/5, w, h/3); 
+      fCtx.fillStyle = 'rgba(0,0,0,0.4)';
+      fCtx.fillRect(-w / 2, -h / 5, w, h / 3);
       fCtx.restore();
     }
 
-    fCtx.drawImage(resultImageElement, x, y, w, h);
+    fCtx.drawImage(croppedCanvas, x, y, w, h);
 
     return new Promise(resolve => finalCanvas.toBlob(resolve, 'image/png'));
 
   } catch (error) {
     console.error("Errore elaborazione immagine:", error);
-    alert("Errore: " + error.message);
+    alert("Errore AI: " + error.message);
     return processAdvancedImage(originalBlobUrl, cropArea, false, enableShadow);
   }
 };
@@ -573,20 +673,20 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
   const [urlInput, setUrlInput] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('arasaac'); 
+  const [activeTab, setActiveTab] = useState('arasaac');
   const fileInputRef = useRef(null);
-  const [editorImage, setEditorImage] = useState(null); 
-  const [tempFileName, setTempFileName] = useState(''); 
+  const [editorImage, setEditorImage] = useState(null);
+  const [tempFileName, setTempFileName] = useState('');
 
   // Stati per la navigazione avanzata "I Miei Progetti"
   const [selectedBoard, setSelectedBoard] = useState(null);
-  const [selectedPageIndex, setSelectedPageIndex] = useState(0); 
-  
+  const [selectedPageIndex, setSelectedPageIndex] = useState(0);
+
   // STATO PER LE IMMAGINI "IDRATATE" (Visibili)
-  const [viewItems, setViewItems] = useState([]); 
+  const [viewItems, setViewItems] = useState([]);
 
   // STATO PER LA STORIA DELLE SELEZIONI (Numeri 1, 2, 3...)
-  const [selectionHistory, setSelectionHistory] = useState([]); 
+  const [selectionHistory, setSelectionHistory] = useState([]);
 
   useEffect(() => {
     if (isOpen && initialQuery) {
@@ -599,7 +699,7 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
       // Reset navigazione
       setSelectedBoard(null);
       setSelectedPageIndex(0);
-      setSelectionHistory([]); 
+      setSelectionHistory([]);
       setViewItems([]);
     }
   }, [isOpen, initialQuery]);
@@ -615,8 +715,8 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
       // 1. Recupera gli items grezzi
       let rawItems = [];
       if (selectedBoard.type === 'grid') {
-        rawItems = (selectedBoard.pages && selectedBoard.pages[selectedPageIndex]) 
-          ? selectedBoard.pages[selectedPageIndex].items 
+        rawItems = (selectedBoard.pages && selectedBoard.pages[selectedPageIndex])
+          ? selectedBoard.pages[selectedPageIndex].items
           : [];
       } else {
         rawItems = selectedBoard.items || [];
@@ -628,10 +728,10 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
         // Se non ha sourceId (es. preset), imageUrl resterà null/undefined, ed è corretto.
         // Se ha sourceId, otteniamo un blob URL valido per QUESTA sessione.
         const freshUrl = item.sourceId ? await getImageUrl(item.sourceId) : item.imageUrl;
-        
-        return { 
-          ...item, 
-          imageUrl: freshUrl 
+
+        return {
+          ...item,
+          imageUrl: freshUrl
         };
       }));
 
@@ -666,7 +766,7 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
       if (data.query && data.query.pages) {
         Object.values(data.query.pages).forEach((page) => {
           if (page.imageinfo && page.imageinfo[0] && page.imageinfo[0].url && page.imageinfo[0].mime.startsWith('image/')) {
-             images.push({ _id: page.pageid, url: page.imageinfo[0].url, title: page.title.replace('File:', '') });
+            images.push({ _id: page.pageid, url: page.imageinfo[0].url, title: page.title.replace('File:', '') });
           }
         });
       }
@@ -680,17 +780,17 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
     const reader = new FileReader();
     reader.onloadend = () => {
       setTempFileName(file.name.split('.')[0]);
-      setEditorImage(reader.result); 
+      setEditorImage(reader.result);
     };
     reader.readAsDataURL(file);
-    e.target.value = null; 
+    e.target.value = null;
   };
 
   // --- SELEZIONE FINALE ---
   // --- IN SEARCHMODAL: handleSelect (Versione Pulita) ---
   const handleSelect = async (item, source) => {
     if (source !== 'boardItem' && source !== 'preset') setLoading(true);
-    
+
     let imageUrl = '';
     let sourceId = '';
     let dominantColor = null;
@@ -702,39 +802,39 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
     } else if (source === 'wikimedia') {
       imageUrl = item.url;
       sourceId = `wiki-${item._id}`;
-      await cacheArasaacImage(imageUrl, sourceId); 
+      await cacheArasaacImage(imageUrl, sourceId);
     } else if (source === 'boardItem') {
-       imageUrl = item.imageUrl; 
-       sourceId = item.sourceId;
-       dominantColor = item.dominantColor;
+      imageUrl = item.imageUrl;
+      sourceId = item.sourceId;
+      dominantColor = item.dominantColor;
     } else if (source === 'preset') {
-       sourceId = `preset-${item.id}`;
+      sourceId = `preset-${item.id}`;
     }
 
     if (source !== 'boardItem' && source !== 'preset') {
-       const blobUrl = await getImageUrl(sourceId);
-       dominantColor = await getDominantColor(blobUrl);
-       imageUrl = blobUrl;
+      const blobUrl = await getImageUrl(sourceId);
+      dominantColor = await getDominantColor(blobUrl);
+      imageUrl = blobUrl;
     }
 
     onSelect({
-      id: crypto.randomUUID(), 
+      id: crypto.randomUUID(),
       sourceId: sourceId,
       label: item.label || (item.keywords ? item.keywords[0]?.keyword : (item.title || query)),
       imageUrl: imageUrl,
       dominantColor: dominantColor,
-      iconId: item.iconId || (source === 'preset' ? item.id : undefined), 
+      iconId: item.iconId || (source === 'preset' ? item.id : undefined),
       completed: false
     });
 
     setLoading(false);
 
     if (!initialQuery) {
-        // MODALITÀ AGGIUNTA
-        const trackId = item.id || item._id || ('preset-' + item.id);
-        setSelectionHistory(prev => [...prev, trackId]); 
+      // MODALITÀ AGGIUNTA
+      const trackId = item.id || item._id || ('preset-' + item.id);
+      setSelectionHistory(prev => [...prev, trackId]);
     } else {
-        onClose();
+      onClose();
     }
   };
 
@@ -752,7 +852,7 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
   };
 
   const handleUrlSubmit = async () => {
-    if(!urlInput) return;
+    if (!urlInput) return;
     setLoading(true);
     onSelect({ id: crypto.randomUUID(), sourceId: urlInput, label: googleQuery || 'Web', imageUrl: urlInput, completed: false });
     setLoading(false); onClose();
@@ -768,11 +868,11 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
           <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Cerca Immagine</h3>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full"><X className="w-5 h-5 text-slate-500" /></button>
         </div>
-        
+
         {/* Tab Navigation */}
         <div className="flex p-2 gap-2 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 overflow-x-auto">
           {['arasaac', 'presets', 'boards', 'wikimedia', 'local', 'web'].map(tab => (
-            <button key={tab} onClick={() => { setActiveTab(tab); setResults([]); if(tab !== 'arasaac') setQuery(''); }} className={`flex-1 py-2 px-4 rounded-lg font-medium text-sm whitespace-nowrap transition-colors capitalize ${activeTab === tab ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700'}`}>
+            <button key={tab} onClick={() => { setActiveTab(tab); setResults([]); if (tab !== 'arasaac') setQuery(''); }} className={`flex-1 py-2 px-4 rounded-lg font-medium text-sm whitespace-nowrap transition-colors capitalize ${activeTab === tab ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700'}`}>
               {tab === 'presets' ? 'Icone' : tab === 'arasaac' ? 'Simboli' : tab === 'boards' ? 'I Miei Progetti' : tab === 'wikimedia' ? 'Foto Reali' : tab === 'local' ? 'Galleria' : 'Link'}
             </button>
           ))}
@@ -780,7 +880,7 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
 
         {/* Contenuto Principale */}
         <div className="flex-1 overflow-y-auto p-4">
-          
+
           {(activeTab === 'arasaac' || activeTab === 'wikimedia') && (
             <>
               <div className="flex gap-2 mb-4">
@@ -793,22 +893,23 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
                     const trackId = item._id;
                     const selectionIndex = selectionHistory.lastIndexOf(trackId);
                     const isSelected = selectionIndex !== -1;
-                    
+
                     return (
-                    <button 
-                      key={item._id} 
-                      onClick={() => handleSelect(item, activeTab)} 
-                      className={`group aspect-square p-2 border rounded-lg overflow-hidden relative transition-all ${isSelected ? 'border-blue-500 ring-2 ring-blue-500 bg-blue-50' : 'hover:border-blue-500 bg-white'}`}
-                    >
-                      {isSelected && (
-                        <div className="absolute top-2 right-2 z-10 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md animate-in zoom-in">
-                          {selectionHistory.filter(id => id === trackId).length > 1 ? selectionHistory.length : selectionIndex + 1}
-                        </div>
-                      )}
-                      <img src={activeTab === 'arasaac' ? `https://api.arasaac.org/api/pictograms/${item._id}?download=false` : item.url} className="w-full h-full object-contain" />
-                      <span className="absolute bottom-0 left-0 w-full bg-black/50 text-white text-[10px] truncate px-1">{item.keywords ? item.keywords[0]?.keyword : item.title}</span>
-                    </button>
-                  )})}
+                      <button
+                        key={item._id}
+                        onClick={() => handleSelect(item, activeTab)}
+                        className={`group aspect-square p-2 border rounded-lg overflow-hidden relative transition-all ${isSelected ? 'border-blue-500 ring-2 ring-blue-500 bg-blue-50' : 'hover:border-blue-500 bg-white'}`}
+                      >
+                        {isSelected && (
+                          <div className="absolute top-2 right-2 z-10 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md animate-in zoom-in">
+                            {selectionHistory.filter(id => id === trackId).length > 1 ? selectionHistory.length : selectionIndex + 1}
+                          </div>
+                        )}
+                        <img src={activeTab === 'arasaac' ? `https://api.arasaac.org/api/pictograms/${item._id}?download=false` : item.url} className="w-full h-full object-contain" />
+                        <span className="absolute bottom-0 left-0 w-full bg-black/50 text-white text-[10px] truncate px-1">{item.keywords ? item.keywords[0]?.keyword : item.title}</span>
+                      </button>
+                    )
+                  })}
                   {results.length === 0 && query && !loading && <p className="col-span-full text-center text-slate-400">Nessun risultato.</p>}
                 </div>
               )}
@@ -817,152 +918,152 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
 
           {activeTab === 'presets' && (
             <div className="grid grid-cols-4 sm:grid-cols-5 gap-4">
-                {PRESET_ICONS.map((preset) => {
-                   const trackId = `preset-${preset.id}`;
-                   const selectionIndex = selectionHistory.indexOf(trackId);
-                   const isSelected = selectionIndex !== -1;
+              {PRESET_ICONS.map((preset) => {
+                const trackId = `preset-${preset.id}`;
+                const selectionIndex = selectionHistory.indexOf(trackId);
+                const isSelected = selectionIndex !== -1;
 
-                   return (
-                    <button 
-                        key={preset.id} 
-                        onClick={() => handlePresetSelect(preset)} 
-                        className={`aspect-square flex flex-col items-center justify-center p-2 rounded-xl border transition-all group relative ${preset.style.bg} ${preset.style.border} ${isSelected ? 'ring-4 ring-blue-400 scale-95' : 'hover:scale-105'}`}
-                    >
-                        {isSelected && (
-                           <div className="absolute top-1 right-1 z-20 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md animate-in zoom-in">
-                              {selectionIndex + 1}
-                           </div>
-                        )}
-                        <preset.icon className={`w-8 h-8 mb-2 ${preset.style.icon}`} />
-                        <span className="text-xs font-bold text-slate-700 truncate w-full text-center">{preset.label}</span>
-                    </button>
-                   )
-                })}
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => handlePresetSelect(preset)}
+                    className={`aspect-square flex flex-col items-center justify-center p-2 rounded-xl border transition-all group relative ${preset.style.bg} ${preset.style.border} ${isSelected ? 'ring-4 ring-blue-400 scale-95' : 'hover:scale-105'}`}
+                  >
+                    {isSelected && (
+                      <div className="absolute top-1 right-1 z-20 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md animate-in zoom-in">
+                        {selectionIndex + 1}
+                      </div>
+                    )}
+                    <preset.icon className={`w-8 h-8 mb-2 ${preset.style.icon}`} />
+                    <span className="text-xs font-bold text-slate-700 truncate w-full text-center">{preset.label}</span>
+                  </button>
+                )
+              })}
             </div>
           )}
 
           {/* TAB 3: I MIEI PROGETTI */}
           {activeTab === 'boards' && (
-             <div className="h-full flex flex-col">
-                {/* Livello 1: Selezione Progetto */}
-                {!selectedBoard && (
-                   <div className="space-y-2">
-                     <h4 className="text-sm font-bold text-slate-500 mb-2 uppercase">Scegli da dove copiare:</h4>
-                     <div className="grid grid-cols-1 gap-2">
-                       {boards.filter(b => b.type === 'grid' || b.type === 'sequence').map(b => (
-                         <button key={b.id} onClick={() => { setSelectedBoard(b); setSelectedPageIndex(0); }} className="flex items-center gap-3 p-3 rounded-xl border hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors">
-                           <div className={`p-2 rounded-lg ${b.type === 'grid' ? 'bg-blue-100 text-blue-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                             {b.type === 'grid' ? <LayoutGrid className="w-5 h-5"/> : <ListOrdered className="w-5 h-5"/>}
-                           </div>
-                           <div className="flex-1">
-                             <div className="font-bold text-slate-800 dark:text-slate-200">{b.title}</div>
-                             <div className="text-xs text-slate-500">{new Date(b.updatedAt).toLocaleDateString()}</div>
-                           </div>
-                           <ArrowRight className="w-4 h-4 text-slate-300"/>
-                         </button>
-                       ))}
-                       {boards.filter(b => b.type === 'grid' || b.type === 'sequence').length === 0 && (
-                          <div className="text-center p-8 text-slate-400 border-2 border-dashed rounded-xl">Non hai ancora creato progetti di comunicazione.</div>
-                       )}
-                     </div>
-                   </div>
-                )}
-
-                {/* Livello 2: Navigazione Items e Pagine */}
-                {selectedBoard && (
-                   <div className="flex flex-col h-full">
-                      <div className="flex items-center justify-between mb-4 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-lg">
-                        <button onClick={() => setSelectedBoard(null)} className="flex items-center gap-1 text-sm text-blue-600 font-bold px-2 py-1 hover:bg-blue-100 rounded">
-                           <ArrowLeft className="w-4 h-4"/> Indietro
-                        </button>
-                        
-                        {selectedBoard.type === 'grid' && selectedBoard.pages && selectedBoard.pages.length > 1 ? (
-                           <div className="flex items-center gap-2">
-                              <button 
-                                disabled={selectedPageIndex === 0}
-                                onClick={() => setSelectedPageIndex(prev => Math.max(0, prev - 1))}
-                                className="p-1 rounded hover:bg-slate-200 disabled:opacity-30"
-                              >
-                                <ArrowLeft className="w-5 h-5"/>
-                              </button>
-                              <span className="text-xs font-bold uppercase text-slate-500">
-                                 {selectedBoard.pages[selectedPageIndex].name} ({selectedPageIndex + 1}/{selectedBoard.pages.length})
-                              </span>
-                              <button 
-                                disabled={selectedPageIndex >= selectedBoard.pages.length - 1}
-                                onClick={() => setSelectedPageIndex(prev => Math.min(selectedBoard.pages.length - 1, prev + 1))}
-                                className="p-1 rounded hover:bg-slate-200 disabled:opacity-30"
-                              >
-                                <ArrowRight className="w-5 h-5"/>
-                              </button>
-                           </div>
-                        ) : (
-                           <span className="text-sm font-bold text-slate-700 dark:text-slate-300 truncate max-w-[150px]">{selectedBoard.title}</span>
-                        )}
-                      </div>
-
-                      {/* Griglia Items IDRATATI */}
-                      <div className="flex-1 overflow-y-auto min-h-[300px]">
-                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                           {(!viewItems || viewItems.length === 0) ? (
-                              <div className="col-span-full text-center text-slate-400 py-10">
-                                {selectedBoard ? "Caricamento immagini..." : "Pagina vuota."}
-                              </div>
-                           ) : (
-                              viewItems.map(item => {
-                                 // Gestione Numero Selezione
-                                 const trackId = item.id;
-                                 const selectionIndex = selectionHistory.indexOf(trackId);
-                                 const isSelected = selectionIndex !== -1;
-
-                                 return (
-                                   <button 
-                                      key={item.id} 
-                                      onClick={() => handleSelect(item, 'boardItem')} 
-                                      className={`aspect-square p-2 border-2 rounded-xl flex flex-col items-center justify-center bg-white dark:bg-slate-700 transition-all duration-200 relative ${isSelected ? 'border-blue-500 bg-blue-50 scale-95' : 'hover:border-blue-500 hover:shadow-md'}`}
-                                   >
-                                      {/* Pallino Numerato */}
-                                      {isSelected && (
-                                         <div className="absolute top-1 right-1 z-10 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md animate-in zoom-in">
-                                            {selectionIndex + 1}
-                                         </div>
-                                      )}
-                                      
-                                      <div className="w-full h-2/3 flex items-center justify-center overflow-hidden mb-1">
-                                        {/* Ora item.imageUrl è garantito dall'useEffect */}
-                                        {item.imageUrl ? <img src={item.imageUrl} className="max-w-full max-h-full object-contain"/> : item.iconId ? (() => { const IconComp = getIconComponent(item.iconId); return <IconComp className="w-8 h-8"/> })() : <div className="text-xs text-slate-300">No IMG</div>}
-                                      </div>
-                                      <div className="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate w-full text-center">{item.label}</div>
-                                   </button>
-                                 );
-                              })
-                           )}
+            <div className="h-full flex flex-col">
+              {/* Livello 1: Selezione Progetto */}
+              {!selectedBoard && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-bold text-slate-500 mb-2 uppercase">Scegli da dove copiare:</h4>
+                  <div className="grid grid-cols-1 gap-2">
+                    {boards.filter(b => b.type === 'grid' || b.type === 'sequence').map(b => (
+                      <button key={b.id} onClick={() => { setSelectedBoard(b); setSelectedPageIndex(0); }} className="flex items-center gap-3 p-3 rounded-xl border hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors">
+                        <div className={`p-2 rounded-lg ${b.type === 'grid' ? 'bg-blue-100 text-blue-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                          {b.type === 'grid' ? <LayoutGrid className="w-5 h-5" /> : <ListOrdered className="w-5 h-5" />}
                         </div>
+                        <div className="flex-1">
+                          <div className="font-bold text-slate-800 dark:text-slate-200">{b.title}</div>
+                          <div className="text-xs text-slate-500">{new Date(b.updatedAt).toLocaleDateString()}</div>
+                        </div>
+                        <ArrowRight className="w-4 h-4 text-slate-300" />
+                      </button>
+                    ))}
+                    {boards.filter(b => b.type === 'grid' || b.type === 'sequence').length === 0 && (
+                      <div className="text-center p-8 text-slate-400 border-2 border-dashed rounded-xl">Non hai ancora creato progetti di comunicazione.</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Livello 2: Navigazione Items e Pagine */}
+              {selectedBoard && (
+                <div className="flex flex-col h-full">
+                  <div className="flex items-center justify-between mb-4 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-lg">
+                    <button onClick={() => setSelectedBoard(null)} className="flex items-center gap-1 text-sm text-blue-600 font-bold px-2 py-1 hover:bg-blue-100 rounded">
+                      <ArrowLeft className="w-4 h-4" /> Indietro
+                    </button>
+
+                    {selectedBoard.type === 'grid' && selectedBoard.pages && selectedBoard.pages.length > 1 ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          disabled={selectedPageIndex === 0}
+                          onClick={() => setSelectedPageIndex(prev => Math.max(0, prev - 1))}
+                          className="p-1 rounded hover:bg-slate-200 disabled:opacity-30"
+                        >
+                          <ArrowLeft className="w-5 h-5" />
+                        </button>
+                        <span className="text-xs font-bold uppercase text-slate-500">
+                          {selectedBoard.pages[selectedPageIndex].name} ({selectedPageIndex + 1}/{selectedBoard.pages.length})
+                        </span>
+                        <button
+                          disabled={selectedPageIndex >= selectedBoard.pages.length - 1}
+                          onClick={() => setSelectedPageIndex(prev => Math.min(selectedBoard.pages.length - 1, prev + 1))}
+                          className="p-1 rounded hover:bg-slate-200 disabled:opacity-30"
+                        >
+                          <ArrowRight className="w-5 h-5" />
+                        </button>
                       </div>
-                   </div>
-                )}
-             </div>
+                    ) : (
+                      <span className="text-sm font-bold text-slate-700 dark:text-slate-300 truncate max-w-[150px]">{selectedBoard.title}</span>
+                    )}
+                  </div>
+
+                  {/* Griglia Items IDRATATI */}
+                  <div className="flex-1 overflow-y-auto min-h-[300px]">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                      {(!viewItems || viewItems.length === 0) ? (
+                        <div className="col-span-full text-center text-slate-400 py-10">
+                          {selectedBoard ? "Caricamento immagini..." : "Pagina vuota."}
+                        </div>
+                      ) : (
+                        viewItems.map(item => {
+                          // Gestione Numero Selezione
+                          const trackId = item.id;
+                          const selectionIndex = selectionHistory.indexOf(trackId);
+                          const isSelected = selectionIndex !== -1;
+
+                          return (
+                            <button
+                              key={item.id}
+                              onClick={() => handleSelect(item, 'boardItem')}
+                              className={`aspect-square p-2 border-2 rounded-xl flex flex-col items-center justify-center bg-white dark:bg-slate-700 transition-all duration-200 relative ${isSelected ? 'border-blue-500 bg-blue-50 scale-95' : 'hover:border-blue-500 hover:shadow-md'}`}
+                            >
+                              {/* Pallino Numerato */}
+                              {isSelected && (
+                                <div className="absolute top-1 right-1 z-10 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md animate-in zoom-in">
+                                  {selectionIndex + 1}
+                                </div>
+                              )}
+
+                              <div className="w-full h-2/3 flex items-center justify-center overflow-hidden mb-1">
+                                {/* Ora item.imageUrl è garantito dall'useEffect */}
+                                {item.imageUrl ? <img src={item.imageUrl} className="max-w-full max-h-full object-contain" /> : item.iconId ? (() => { const IconComp = getIconComponent(item.iconId); return <IconComp className="w-8 h-8" /> })() : <div className="text-xs text-slate-300">No IMG</div>}
+                              </div>
+                              <div className="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate w-full text-center">{item.label}</div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {activeTab === 'local' && <div className="flex flex-col items-center justify-center h-full gap-4 py-10 border-2 border-dashed rounded-xl bg-slate-50 dark:bg-slate-800/50"><div className="p-4 bg-blue-100 rounded-full text-blue-600"><Upload className="w-8 h-8" /></div><p className="text-sm font-medium">Carica foto dal dispositivo</p><input type="file" ref={fileInputRef} accept="image/*" className="hidden" onChange={handleFileUpload} /><button onClick={() => fileInputRef.current?.click()} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg">Scegli File</button></div>}
-          
+
           {activeTab === 'web' && (
-             <div className="p-4 space-y-4">
-                <input type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} placeholder="Incolla qui l'URL dell'immagine..." className="w-full px-4 py-2 border rounded-lg dark:bg-slate-700 dark:text-white" />
-                <input type="text" value={googleQuery} onChange={(e) => setGoogleQuery(e.target.value)} placeholder="Nome opzionale (etichetta)" className="w-full px-4 py-2 border rounded-lg dark:bg-slate-700 dark:text-white" />
-                <button onClick={handleUrlSubmit} disabled={!urlInput} className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold disabled:opacity-50">Usa Immagine</button>
-             </div>
+            <div className="p-4 space-y-4">
+              <input type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} placeholder="Incolla qui l'URL dell'immagine..." className="w-full px-4 py-2 border rounded-lg dark:bg-slate-700 dark:text-white" />
+              <input type="text" value={googleQuery} onChange={(e) => setGoogleQuery(e.target.value)} placeholder="Nome opzionale (etichetta)" className="w-full px-4 py-2 border rounded-lg dark:bg-slate-700 dark:text-white" />
+              <button onClick={handleUrlSubmit} disabled={!urlInput} className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold disabled:opacity-50">Usa Immagine</button>
+            </div>
           )}
         </div>
-      
-      <ImageEditorModal 
-        isOpen={!!editorImage} 
-        imageSrc={editorImage} 
-        onClose={() => setEditorImage(null)} 
-        onSave={handleEditorSave} 
-      />
-    </div> 
-  </div> 
+
+        <ImageEditorModal
+          isOpen={!!editorImage}
+          imageSrc={editorImage}
+          onClose={() => setEditorImage(null)}
+          onSave={handleEditorSave}
+        />
+      </div>
+    </div>
   );
 };
 
@@ -975,7 +1076,7 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
   const [removeBg, setRemoveBg] = useState(true);
   const [addShadow, setAddShadow] = useState(true);
   const [processing, setProcessing] = useState(false);
-  
+
   // Reset
   useEffect(() => {
     setZoom(1);
@@ -1005,31 +1106,31 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
   return (
     <div className="fixed inset-0 z-[110] bg-black/90 flex items-center justify-center p-0 md:p-4 animate-in fade-in">
       <div className="bg-white dark:bg-slate-800 w-full h-full md:h-[90vh] md:max-w-4xl md:rounded-2xl overflow-hidden flex flex-col relative">
-        
+
         {/* HEADER */}
         <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900 shrink-0 z-20">
           <h3 className="font-bold flex items-center gap-2 text-slate-800 dark:text-white">
-            <CropIcon className="w-5 h-5"/> Editor Immagine
+            <CropIcon className="w-5 h-5" /> Editor Immagine
           </h3>
           <button onClick={onClose} disabled={processing} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full">
-            <X className="w-6 h-6"/>
+            <X className="w-6 h-6" />
           </button>
         </div>
-        
+
         {/* AREA DI RITAGLIO - Layout sicuro per Android */}
         <div className="relative flex-1 w-full bg-slate-950 overflow-hidden min-h-[300px]">
-           <Cropper
+          <Cropper
             image={imageSrc}
             crop={crop}
             zoom={zoom}
-            objectFit="contain" 
-            restrictPosition={false} 
+            objectFit="contain"
+            restrictPosition={false}
             minZoom={0.5}
             maxZoom={3}
             onCropChange={setCrop}
             onCropComplete={onCropComplete}
             onZoomChange={setZoom}
-            style={{ 
+            style={{
               containerStyle: { width: '100%', height: '100%', backgroundColor: '#020617' },
               mediaStyle: { maxWidth: 'none' }
             }}
@@ -1043,28 +1144,28 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
               <label className="text-xs font-bold uppercase text-slate-500">Zoom</label>
               <span className="text-xs text-slate-400">{Math.round(zoom * 100)}%</span>
             </div>
-            <input type="range" value={zoom} min={0.5} max={3} step={0.1} onChange={(e) => setZoom(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"/>
+            <input type="range" value={zoom} min={0.5} max={3} step={0.1} onChange={(e) => setZoom(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
           </div>
 
           <div className="flex flex-col gap-3">
-             <label className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${removeBg ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-200 dark:border-slate-700'}`}>
-                <input type="checkbox" checked={removeBg} onChange={() => setRemoveBg(!removeBg)} className="w-5 h-5 mt-1 text-blue-600 rounded focus:ring-blue-500" />
-                <div className="flex-1">
-                   <div className="font-bold text-sm flex items-center gap-2 text-slate-900 dark:text-white"><Wand2 className="w-4 h-4 text-blue-500"/> Rimuovi Sfondo (AI)</div>
-                   {removeBg && <div className="mt-2 text-[11px] leading-tight p-2 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700 rounded-lg flex gap-2"><span className="text-base">⚡</span><div><strong>Elaborazione su dispositivo:</strong> Sfrutta la potenza del tuo processore.</div></div>}
-                </div>
-             </label>
-             <label className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${addShadow ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-200 dark:border-slate-700'}`}>
-                <input type="checkbox" checked={addShadow} onChange={() => setAddShadow(!addShadow)} className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500" />
-                <div className="flex-1"><div className="font-bold text-sm flex items-center gap-2 text-slate-900 dark:text-white"><Layers className="w-4 h-4 text-indigo-500"/> Aggiungi Ombra</div></div>
-             </label>
+            <label className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${removeBg ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-200 dark:border-slate-700'}`}>
+              <input type="checkbox" checked={removeBg} onChange={() => setRemoveBg(!removeBg)} className="w-5 h-5 mt-1 text-blue-600 rounded focus:ring-blue-500" />
+              <div className="flex-1">
+                <div className="font-bold text-sm flex items-center gap-2 text-slate-900 dark:text-white"><Wand2 className="w-4 h-4 text-blue-500" /> Rimuovi Sfondo (AI)</div>
+                {removeBg && <div className="mt-2 text-[11px] leading-tight p-2 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700 rounded-lg flex gap-2"><span className="text-base">⚡</span><div><strong>Elaborazione su dispositivo:</strong> Sfrutta la potenza del tuo processore.</div></div>}
+              </div>
+            </label>
+            <label className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${addShadow ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-200 dark:border-slate-700'}`}>
+              <input type="checkbox" checked={addShadow} onChange={() => setAddShadow(!addShadow)} className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500" />
+              <div className="flex-1"><div className="font-bold text-sm flex items-center gap-2 text-slate-900 dark:text-white"><Layers className="w-4 h-4 text-indigo-500" /> Aggiungi Ombra</div></div>
+            </label>
           </div>
         </div>
 
         {/* FOOTER */}
         <div className="p-4 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-900 flex justify-end gap-3 shrink-0 z-20 pb-8 md:pb-4">
-           <button onClick={onClose} disabled={processing} className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-lg">Annulla</button>
-           <button onClick={handleSave} disabled={processing} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg">{processing ? "Elaborazione..." : "Salva"}</button>
+          <button onClick={onClose} disabled={processing} className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-lg">Annulla</button>
+          <button onClick={handleSave} disabled={processing} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg">{processing ? "Elaborazione..." : "Salva"}</button>
         </div>
       </div>
     </div>
@@ -1072,18 +1173,18 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
 };
 
 // --- CARD COMPONENT (AGGIORNATO CON EVIDENZIAZIONE) ---
-const PictogramCard = ({ 
-  item, 
-  onRemove, 
-  onToggleComplete, 
-  onEditLabel, 
-  onReplaceImage, 
-  mode, 
-  orientation, 
-  isLocked, 
+const PictogramCard = ({
+  item,
+  onRemove,
+  onToggleComplete,
+  onEditLabel,
+  onReplaceImage,
+  mode,
+  orientation,
+  isLocked,
   // Nuove props per l'interazione
-  isActive, 
-  onClick 
+  isActive,
+  onClick
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [tempLabel, setTempLabel] = useState(item.label);
@@ -1106,7 +1207,7 @@ const PictogramCard = ({
   };
 
   return (
-    <div 
+    <div
       onClick={handleCardClick}
       className={`
         relative group flex items-center p-3 rounded-xl shadow-sm border-2 transition-all duration-200
@@ -1157,7 +1258,7 @@ const PictogramCard = ({
         {isEditing && !isLocked && onEditLabel ? (
           <input type="text" value={tempLabel} onClick={(e) => e.stopPropagation()} onChange={(e) => setTempLabel(e.target.value)} onBlur={saveLabel} onKeyDown={(e) => e.key === 'Enter' && saveLabel()} className="w-full text-sm font-bold bg-blue-50 dark:bg-slate-600 rounded px-1 outline-none border border-blue-300" autoFocus />
         ) : (
-          <p onClick={(e) => { if(!isLocked && onEditLabel) { e.stopPropagation(); setIsEditing(true); }}} className={`font-bold uppercase tracking-wide truncate ${!isLocked && onEditLabel ? 'cursor-text hover:text-blue-600 dark:hover:text-blue-400' : ''} ${item.completed ? 'line-through decoration-2 text-slate-400' : 'text-slate-800 dark:text-slate-200'} ${isVerticalSequence ? 'text-xl' : 'text-sm md:text-base'}`}>{item.label}</p>
+          <p onClick={(e) => { if (!isLocked && onEditLabel) { e.stopPropagation(); setIsEditing(true); } }} className={`font-bold uppercase tracking-wide truncate ${!isLocked && onEditLabel ? 'cursor-text hover:text-blue-600 dark:hover:text-blue-400' : ''} ${item.completed ? 'line-through decoration-2 text-slate-400' : 'text-slate-800 dark:text-slate-200'} ${isVerticalSequence ? 'text-xl' : 'text-sm md:text-base'}`}>{item.label}</p>
         )}
       </div>
     </div>
@@ -1172,7 +1273,7 @@ const HelpModal = ({ isOpen, onClose }) => {
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4 animate-in fade-in backdrop-blur-sm">
       <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 dark:border-slate-700">
-        
+
         {/* Header */}
         <div className="p-5 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
           <div className="flex items-center gap-3">
@@ -1191,7 +1292,7 @@ const HelpModal = ({ isOpen, onClose }) => {
 
         {/* Content Scrollable */}
         <div className="flex-1 overflow-y-auto p-6 space-y-10 text-slate-700 dark:text-slate-300">
-          
+
           {/* 1. GLI STRUMENTI CLINICI */}
           <section>
             <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-4 border-b pb-2 dark:border-slate-700">
@@ -1211,7 +1312,7 @@ const HelpModal = ({ isOpen, onClose }) => {
                   <ListOrdered className="w-5 h-5" /> Agenda Visiva
                 </div>
                 <p className="text-xs leading-relaxed opacity-80">
-                  Routine giornaliere o sequenze. Spunta le azioni completate <CheckCircle2 className="w-3 h-3 inline"/>.
+                  Routine giornaliere o sequenze. Spunta le azioni completate <CheckCircle2 className="w-3 h-3 inline" />.
                 </p>
               </div>
               <div className="p-4 rounded-xl bg-amber-50/50 dark:bg-slate-700/30 border border-amber-100 dark:border-slate-600">
@@ -1255,7 +1356,7 @@ const HelpModal = ({ isOpen, onClose }) => {
               2. Modalità d'Uso (Il Lucchetto)
             </h4>
             <div className="flex flex-col md:flex-row gap-6">
-              
+
               {/* EDIT MODE */}
               <div className="flex-1 flex gap-4 bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl">
                 <div className="p-3 bg-emerald-100 text-emerald-700 rounded-2xl h-min">
@@ -1265,21 +1366,21 @@ const HelpModal = ({ isOpen, onClose }) => {
                   <h5 className="font-bold text-slate-900 dark:text-white mb-2">Modalità Modifica (Aperto)</h5>
                   <ul className="text-sm space-y-2 text-slate-600 dark:text-slate-300">
                     <li className="flex items-start gap-2">
-                        <span className="bg-slate-200 text-slate-600 rounded px-1.5 py-0.5 text-xs font-bold mt-0.5">1</span>
-                        <span><strong>Aggiungi:</strong> Usa il tasto <Plus className="w-3 h-3 inline"/> per inserire nuovi simboli.</span>
+                      <span className="bg-slate-200 text-slate-600 rounded px-1.5 py-0.5 text-xs font-bold mt-0.5">1</span>
+                      <span><strong>Aggiungi:</strong> Usa il tasto <Plus className="w-3 h-3 inline" /> per inserire nuovi simboli.</span>
                     </li>
                     <li className="flex items-start gap-2">
-                        <span className="bg-slate-200 text-slate-600 rounded px-1.5 py-0.5 text-xs font-bold mt-0.5">2</span>
-                        <span><strong>Sposta (Drag & Drop):</strong> Tieni premuto un simbolo e trascinalo. Una <span className="text-blue-500 font-bold">linea blu</span> apparirà per indicarti esattamente dove verrà inserito.</span>
+                      <span className="bg-slate-200 text-slate-600 rounded px-1.5 py-0.5 text-xs font-bold mt-0.5">2</span>
+                      <span><strong>Sposta (Drag & Drop):</strong> Tieni premuto un simbolo e trascinalo. Una <span className="text-blue-500 font-bold">linea blu</span> apparirà per indicarti esattamente dove verrà inserito.</span>
                     </li>
                     <li className="flex items-start gap-2">
-                        <span className="bg-slate-200 text-slate-600 rounded px-1.5 py-0.5 text-xs font-bold mt-0.5">3</span>
-                        <span><strong>Modifica:</strong> Tocca un'immagine per cambiarla o il testo per riscriverlo.</span>
+                      <span className="bg-slate-200 text-slate-600 rounded px-1.5 py-0.5 text-xs font-bold mt-0.5">3</span>
+                      <span><strong>Modifica:</strong> Tocca un'immagine per cambiarla o il testo per riscriverlo.</span>
                     </li>
                   </ul>
                 </div>
               </div>
-              
+
               {/* KID MODE */}
               <div className="flex-1 flex gap-4 bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl">
                 <div className="p-3 bg-red-100 text-red-600 rounded-2xl h-min">
@@ -1291,9 +1392,9 @@ const HelpModal = ({ isOpen, onClose }) => {
                     L'interfaccia si blocca per evitare modifiche accidentali.
                   </p>
                   <ul className="text-sm space-y-1 text-slate-600 dark:text-slate-300 list-disc pl-4">
-                     <li>Le immagini <strong>non si spostano</strong> più.</li>
-                     <li>Toccando un simbolo, questo viene <strong>evidenziato</strong> o spuntato (Agenda).</li>
-                     <li>Ideale per l'utilizzo quotidiano.</li>
+                    <li>Le immagini <strong>non si spostano</strong> più.</li>
+                    <li>Toccando un simbolo, questo viene <strong>evidenziato</strong> o spuntato (Agenda).</li>
+                    <li>Ideale per l'utilizzo quotidiano.</li>
                   </ul>
                 </div>
               </div>
@@ -1305,20 +1406,20 @@ const HelpModal = ({ isOpen, onClose }) => {
             <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-4 border-b pb-2 dark:border-slate-700">
               3. Ricerca Immagini & Trucchi
             </h4>
-            
+
             {/* Box Multi Selezione */}
             <div className="mb-6 p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl flex gap-4 items-start">
-               <div className="bg-indigo-100 dark:bg-indigo-800 p-2.5 rounded-lg text-indigo-600 dark:text-indigo-300 shrink-0">
-                  <Zap className="w-6 h-6" />
-               </div>
-               <div>
-                  <h5 className="font-bold text-indigo-900 dark:text-indigo-100 text-base">Novità: Inserimento Multiplo Veloce</h5>
-                  <p className="text-sm text-indigo-800 dark:text-indigo-200 mt-1 leading-relaxed">
-                     Non devi aggiungere un simbolo alla volta! Quando cerchi le immagini, <strong>clicca su tutte quelle che ti servono</strong>. 
-                     Vedrai apparire dei numeri blu <strong>(1, 2, 3...)</strong> sulle card selezionate.
-                     Quando hai finito, chiudi la finestra e verranno aggiunte tutte insieme nella tua griglia, nell'ordine in cui le hai scelte.
-                  </p>
-               </div>
+              <div className="bg-indigo-100 dark:bg-indigo-800 p-2.5 rounded-lg text-indigo-600 dark:text-indigo-300 shrink-0">
+                <Zap className="w-6 h-6" />
+              </div>
+              <div>
+                <h5 className="font-bold text-indigo-900 dark:text-indigo-100 text-base">Novità: Inserimento Multiplo Veloce</h5>
+                <p className="text-sm text-indigo-800 dark:text-indigo-200 mt-1 leading-relaxed">
+                  Non devi aggiungere un simbolo alla volta! Quando cerchi le immagini, <strong>clicca su tutte quelle che ti servono</strong>.
+                  Vedrai apparire dei numeri blu <strong>(1, 2, 3...)</strong> sulle card selezionate.
+                  Quando hai finito, chiudi la finestra e verranno aggiunte tutte insieme nella tua griglia, nell'ordine in cui le hai scelte.
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
@@ -1343,39 +1444,39 @@ const HelpModal = ({ isOpen, onClose }) => {
               4. Timer Visivo
             </h4>
             <div className="bg-cyan-50 dark:bg-cyan-900/20 p-4 rounded-xl border border-cyan-100 dark:border-cyan-800 space-y-3">
-               <p className="text-sm text-slate-700 dark:text-slate-300">
-                 Strumento fondamentale per gestire le attese e i turni. Il tempo è rappresentato da un "liquido" che si svuota, rendendo il concetto astratto del tempo visibile e concreto.
-               </p>
-               <ul className="text-sm space-y-2 text-slate-600 dark:text-slate-300 list-disc pl-4">
-                  <li>
-                    <strong>Imposta il Tempo:</strong> Clicca direttamente sui numeri del display (es. "05") per scrivere i minuti o i secondi con la tastiera, oppure usa le freccette e i tasti rapidi (es. +10s, 5 min).
-                  </li>
-                  <li>
-                    <strong>Scegli il Suono:</strong> Dal menu a tendina in alto, seleziona il suono che verrà riprodotto allo scadere del tempo (es. Campanella, Beep, Telefono).
-                  </li>
-                  <li>
-                    <strong>Immagine Motivante:</strong> Clicca al centro del cerchio liquido per scegliere un'immagine o un'icona (es. il premio finale o l'attività successiva). L'immagine verrà rivelata man mano che il tempo passa.
-                  </li>
-               </ul>
+              <p className="text-sm text-slate-700 dark:text-slate-300">
+                Strumento fondamentale per gestire le attese e i turni. Il tempo è rappresentato da un "liquido" che si svuota, rendendo il concetto astratto del tempo visibile e concreto.
+              </p>
+              <ul className="text-sm space-y-2 text-slate-600 dark:text-slate-300 list-disc pl-4">
+                <li>
+                  <strong>Imposta il Tempo:</strong> Clicca direttamente sui numeri del display (es. "05") per scrivere i minuti o i secondi con la tastiera, oppure usa le freccette e i tasti rapidi (es. +10s, 5 min).
+                </li>
+                <li>
+                  <strong>Scegli il Suono:</strong> Dal menu a tendina in alto, seleziona il suono che verrà riprodotto allo scadere del tempo (es. Campanella, Beep, Telefono).
+                </li>
+                <li>
+                  <strong>Immagine Motivante:</strong> Clicca al centro del cerchio liquido per scegliere un'immagine o un'icona (es. il premio finale o l'attività successiva). L'immagine verrà rivelata man mano che il tempo passa.
+                </li>
+              </ul>
             </div>
           </section>
 
           {/* 5. GESTIONE DATI */}
           <section className="bg-slate-50 dark:bg-slate-900/30 p-4 rounded-xl">
-             <div className="flex items-center gap-2 mb-2 font-bold text-slate-700 dark:text-slate-300">
-                <Save className="w-4 h-4"/> Salvataggio e Backup
-             </div>
-             <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                L'app salva tutto in automatico nel tuo dispositivo. Tuttavia, è buona norma fare dei backup regolari.
-             </p>
-             <div className="flex gap-4 text-xs font-medium">
-                <span className="flex items-center gap-1 text-blue-600"><Download className="w-3 h-3"/> Esporta Backup (file .json)</span>
-                <span className="flex items-center gap-1 text-green-600"><UploadIcon className="w-3 h-3"/> Importa Backup</span>
-             </div>
+            <div className="flex items-center gap-2 mb-2 font-bold text-slate-700 dark:text-slate-300">
+              <Save className="w-4 h-4" /> Salvataggio e Backup
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+              L'app salva tutto in automatico nel tuo dispositivo. Tuttavia, è buona norma fare dei backup regolari.
+            </p>
+            <div className="flex gap-4 text-xs font-medium">
+              <span className="flex items-center gap-1 text-blue-600"><Download className="w-3 h-3" /> Esporta Backup (file .json)</span>
+              <span className="flex items-center gap-1 text-green-600"><UploadIcon className="w-3 h-3" /> Importa Backup</span>
+            </div>
           </section>
 
         </div>
-        
+
         {/* Footer */}
         <div className="p-4 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-end">
           <button onClick={onClose} className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 hover:shadow-lg hover:scale-105 transition-all">
@@ -1392,49 +1493,96 @@ const HelpModal = ({ isOpen, onClose }) => {
 const TimeInput = ({ value, onChange, onFocus, onBlur, label, type, onArrowClick }) => {
   return (
     <div className="flex flex-col items-center gap-0.5 group">
-       {/* Freccia Su */}
-       <button 
-         onClick={() => onArrowClick(type, 1)} 
-         className="w-full h-6 flex items-center justify-center rounded-t-md bg-slate-100 hover:bg-blue-100 text-slate-400 hover:text-blue-600 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 active:bg-blue-200"
-       >
-         <ChevronUp className="w-3 h-3"/>
-       </button>
-       
-       {/* Campo Input (Ridotto font e width) */}
-       <div className="relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-0.5 py-1 rounded-lg w-12 md:w-[4.5rem] text-center shadow-sm focus-within:ring-2 focus-within:ring-blue-500 transition-all">
-          <input 
-            type="text"
-            inputMode="numeric"
-            value={value}
-            onFocus={onFocus}
-            onChange={(e) => onChange(type, e.target.value)}
-            onBlur={onBlur}
-            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
-            className="w-full bg-transparent text-center text-xl md:text-3xl font-mono font-bold text-slate-700 dark:text-white outline-none appearance-none p-0 leading-none placeholder-slate-200"
-            placeholder="00"
-            autoComplete="off"
-          />
-          {/* Label nascosta su mobile piccolissimo, visibile su desktop */}
-          <span className="hidden md:block absolute top-1/2 -translate-y-1/2 -right-2 text-slate-300 font-bold text-xl pointer-events-none">{label}</span>
-       </div>
+      {/* Freccia Su */}
+      <button
+        onClick={() => onArrowClick(type, 1)}
+        className="w-full h-6 flex items-center justify-center rounded-t-md bg-slate-100 hover:bg-blue-100 text-slate-400 hover:text-blue-600 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 active:bg-blue-200"
+      >
+        <ChevronUp className="w-3 h-3" />
+      </button>
 
-       {/* Freccia Giù */}
-       <button 
-         onClick={() => onArrowClick(type, -1)} 
-         className="w-full h-6 flex items-center justify-center rounded-b-md bg-slate-100 hover:bg-blue-100 text-slate-400 hover:text-blue-600 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 active:bg-blue-200"
-       >
-         <ChevronDown className="w-3 h-3"/>
-       </button>
+      {/* Campo Input (Ridotto font e width) */}
+      <div className="relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-0.5 py-1 rounded-lg w-12 md:w-[4.5rem] text-center shadow-sm focus-within:ring-2 focus-within:ring-blue-500 transition-all">
+        <input
+          type="text"
+          inputMode="numeric"
+          value={value}
+          onFocus={onFocus}
+          onChange={(e) => onChange(type, e.target.value)}
+          onBlur={onBlur}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+          className="w-full bg-transparent text-center text-xl md:text-3xl font-mono font-bold text-slate-700 dark:text-white outline-none appearance-none p-0 leading-none placeholder-slate-200"
+          placeholder="00"
+          autoComplete="off"
+        />
+        {/* Label nascosta su mobile piccolissimo, visibile su desktop */}
+        <span className="hidden md:block absolute top-1/2 -translate-y-1/2 -right-2 text-slate-300 font-bold text-xl pointer-events-none">{label}</span>
+      </div>
+
+      {/* Freccia Giù */}
+      <button
+        onClick={() => onArrowClick(type, -1)}
+        className="w-full h-6 flex items-center justify-center rounded-b-md bg-slate-100 hover:bg-blue-100 text-slate-400 hover:text-blue-600 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 active:bg-blue-200"
+      >
+        <ChevronDown className="w-3 h-3" />
+      </button>
+    </div>
+  );
+};
+
+// --- ICONE E COMPONENTI SET TIMER MOUSE ---
+const CheeseWedge = ({ isEaten, isEating }: { isEaten: boolean, isEating: boolean }) => {
+  if (isEaten) {
+    return (
+      <svg viewBox="0 0 100 100" className="w-1/2 h-1/2 opacity-30 drop-shadow-none">
+        <circle cx="30" cy="30" r="8" fill="#D1D5DB" />
+        <circle cx="70" cy="60" r="5" fill="#D1D5DB" />
+        <circle cx="40" cy="80" r="6" fill="#D1D5DB" />
+      </svg>
+    );
+  }
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      className={`w-full h-full p-1 md:p-2 transition-all duration-300 ${isEating ? 'scale-90 animate-pulse drop-shadow-none -rotate-3' : 'scale-100 hover:scale-105 drop-shadow-md'}`}
+    >
+      <path d="M15 80 L85 80 Q95 80 95 70 L75 25 Q70 15 60 15 L20 25 Q10 25 10 35 Z" fill="#FBBF24" />
+      <path d="M15 80 L85 80 Q95 80 95 70 L75 25 Q70 15 60 15 L20 25 Q10 25 10 35 Z" fill="none" stroke="#D97706" strokeWidth="4" />
+      <circle cx="35" cy="50" r="8" fill="#D97706" opacity="0.6" />
+      <circle cx="65" cy="65" r="12" fill="#D97706" opacity="0.6" />
+      <circle cx="45" cy="75" r="6" fill="#D97706" opacity="0.6" />
+      <circle cx="55" cy="35" r="5" fill="#D97706" opacity="0.6" />
+    </svg>
+  );
+};
+
+const MouseCharacter = ({ isActive, facesLeft, isFinished }: { isActive: boolean, facesLeft: boolean, isFinished: boolean }) => {
+  if (isFinished) {
+    return <div className="text-4xl md:text-6xl animate-bounce leading-none mt-2">🐭🎉</div>;
+  }
+  return (
+    <div className={`w-12 h-12 md:w-16 md:h-16 drop-shadow-xl transition-transform duration-700 ease-in-out origin-center ${facesLeft ? 'scale-x-[-1]' : 'scale-x-100'} ${isActive ? 'animate-bounce' : ''}`}>
+      <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
+        <path d="M 20 70 Q -10 90 0 40" fill="none" stroke="#FCA5A5" strokeWidth="5" strokeLinecap="round" className={isActive ? 'animate-pulse' : ''} />
+        <ellipse cx="45" cy="70" rx="30" ry="20" fill="#9CA3AF" />
+        <circle cx="70" cy="45" r="14" fill="#6B7280" />
+        <path d="M 40 50 Q 70 50 90 75 Q 60 90 40 90 Z" fill="#9CA3AF" />
+        <circle cx="55" cy="50" r="16" fill="#9CA3AF" />
+        <circle cx="55" cy="50" r="8" fill="#FCA5A5" />
+        <circle cx="75" cy="65" r="3" fill="#1F2937" />
+        <circle cx="92" cy="75" r="5" fill="#EF4444" />
+        <path d="M 85 75 L 100 65 M 85 77 L 105 77 M 85 79 L 100 89" fill="none" stroke="#4B5563" strokeWidth="2" strokeLinecap="round" />
+      </svg>
     </div>
   );
 };
 
 // --- COMPONENTE TIMER VISIVO PRINCIPALE (Mobile Fit) ---
-const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
+const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds = [], onAddCustomSound }) => {
   const [timeLeft, setTimeLeft] = useState(settings.duration || 60);
   const [isActive, setIsActive] = useState(false);
   const [isRinging, setIsRinging] = useState(false);
-  
+
   // Stati Input
   const [inputMin, setInputMin] = useState("01");
   const [inputSec, setInputSec] = useState("00");
@@ -1443,7 +1591,7 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
   // Input Preset custom
   const [newMin, setNewMin] = useState("");
   const [newSec, setNewSec] = useState("");
-  
+
   const audioRef = useRef(null);
   const isDark = document.documentElement.classList.contains('dark');
   const presets = settings.presets || [60, 180, 300, 600];
@@ -1483,11 +1631,12 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
       setIsActive(false);
       setIsRinging(true);
       if (audioRef.current) {
-        const soundId = settings.soundId || 'beep';
-        const soundObj = TIMER_SOUNDS.find(s => s.id === soundId) || TIMER_SOUNDS[0];
+        const soundId = settings.soundId || 'digital';
+        const customObj = customSounds.find((s: any) => s.id === soundId);
+        const soundObj = customObj || TIMER_SOUNDS.find(s => s.id === soundId) || TIMER_SOUNDS[0];
         audioRef.current.src = soundObj.url;
         audioRef.current.loop = true;
-        audioRef.current.play().catch(e => console.log("Audio blocked", e));
+        audioRef.current.play().catch((e: any) => console.log("Audio blocked", e));
       }
     }
     return () => clearInterval(interval);
@@ -1520,7 +1669,7 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
   const handleArrowClick = (field, direction) => {
     let m = parseInt(inputMin || "0", 10);
     let s = parseInt(inputSec || "0", 10);
-    if (field === 'min') { m = Math.max(0, m + direction); } 
+    if (field === 'min') { m = Math.max(0, m + direction); }
     else { s = s + direction; if (s > 59) { s = 0; m++; } if (s < 0) { if (m > 0) { s = 59; m--; } else s = 0; } }
     const newTotal = (m * 60) + s;
     setTimeLeft(newTotal);
@@ -1535,120 +1684,246 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
 
   const toggleTimer = () => { if (isRinging) stopAudio(); else setIsActive(!isActive); };
   const resetTimer = () => { stopAudio(); setIsActive(false); setTimeLeft(settings.duration || 60); };
-  
+
   const addPreset = () => {
     const m = parseInt(newMin) || 0;
     const s = parseInt(newSec) || 0;
     const total = (m * 60) + s;
     if (total > 0) {
-      onUpdateSettings('presets', [...presets, total].sort((a,b) => a-b));
+      onUpdateSettings('presets', [...presets, total].sort((a, b) => a - b));
       setNewMin(""); setNewSec("");
     }
   };
 
   const percentage = Math.min(100, (timeLeft / (settings.duration || 1)) * 100);
-  const currentColor = getProgressColorHex(percentage); 
+  const currentColor = getProgressColorHex(percentage);
 
   return (
     <div className="flex flex-col items-center w-full max-w-4xl mx-auto p-0 animate-in fade-in">
       <audio ref={audioRef} preload="auto" />
-      
+
       {/* HEADER CONTROLLI COMPATTI */}
       <div className="w-full bg-white dark:bg-slate-800 p-3 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 mb-4 flex flex-col gap-3">
-        
-        <div className="flex justify-between items-start gap-2">
-           
-           {/* BOX SINISTRA: Input Tempo e Play */}
-           <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 p-2 rounded-xl border border-slate-100 dark:border-slate-700">
-              <div className="flex gap-1 pr-2 border-r border-slate-200 dark:border-slate-700">
-                 <TimeInput value={inputMin} type="min" label=":" onFocus={() => setActiveField('min')} onBlur={commitTime} onChange={handleInputChange} onArrowClick={handleArrowClick}/>
-                 <TimeInput value={inputSec} type="sec" label="" onFocus={() => setActiveField('sec')} onBlur={commitTime} onChange={handleInputChange} onArrowClick={handleArrowClick}/>
-              </div>
-              <div className="flex flex-col gap-1">
-                 <button onClick={toggleTimer} className={`w-10 h-10 md:w-12 md:h-12 rounded-xl shadow-sm flex items-center justify-center transition-all active:scale-95 ${isActive ? 'bg-amber-100 text-amber-600' : isRinging ? 'bg-red-600 text-white animate-bounce' : 'bg-green-500 text-white'}`}>
-                    {isRinging || isActive ? <Pause className="w-5 h-5 fill-current"/> : <Play className="w-5 h-5 fill-current ml-0.5"/>}
-                 </button>
-                 <button onClick={resetTimer} className="w-10 h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-600 rounded-xl flex items-center justify-center active:bg-slate-100">
-                    <ResetIcon className="w-5 h-5"/>
-                 </button>
-              </div>
-           </div>
 
-           {/* BOX DESTRA: Suoni e Preset Rapidi */}
-           <div className="flex-1 flex flex-col items-end gap-2">
-             <div className="w-full flex items-center gap-1 bg-white dark:bg-slate-800 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                <Volume2 className="w-3 h-3 text-slate-400 shrink-0 ml-1"/>
-                <select value={settings.soundId || 'beep'} onChange={(e) => onUpdateSettings('soundId', e.target.value)} className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer py-1 w-full text-right">
+        <div className="flex justify-between items-start gap-2">
+
+          {/* STILE DEL TIMER (Nuovo Selettore) */}
+          <div className="flex bg-slate-100 dark:bg-slate-900 rounded-xl p-1 shrink-0">
+            <button onClick={() => onUpdateSettings('timerStyle', 'liquid')} className={`p-2 rounded-lg transition-all ${settings.timerStyle !== 'mouse' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-500' : 'text-slate-400 hover:text-slate-600'}`} title="Boccia Liquida">
+              <Timer className="w-4 h-4" />
+            </button>
+            <button onClick={() => onUpdateSettings('timerStyle', 'mouse')} className={`p-2 rounded-lg transition-all ${settings.timerStyle === 'mouse' ? 'bg-white dark:bg-slate-700 shadow-sm text-orange-500' : 'text-slate-400 hover:text-slate-600'}`} title="Topolino e Formaggio">
+              <Mouse className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* BOX SINISTRA: Input Tempo e Play */}
+          <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 p-2 rounded-xl border border-slate-100 dark:border-slate-700">
+            <div className="flex gap-1 pr-2 border-r border-slate-200 dark:border-slate-700">
+              <TimeInput value={inputMin} type="min" label=":" onFocus={() => setActiveField('min')} onBlur={commitTime} onChange={handleInputChange} onArrowClick={handleArrowClick} />
+              <TimeInput value={inputSec} type="sec" label="" onFocus={() => setActiveField('sec')} onBlur={commitTime} onChange={handleInputChange} onArrowClick={handleArrowClick} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <button onClick={toggleTimer} className={`w-10 h-10 md:w-12 md:h-12 rounded-xl shadow-sm flex items-center justify-center transition-all active:scale-95 ${isActive ? 'bg-amber-100 text-amber-600' : isRinging ? 'bg-red-600 text-white animate-bounce' : 'bg-green-500 text-white'}`}>
+                {isRinging || isActive ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
+              </button>
+              <button onClick={resetTimer} className="w-10 h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-600 rounded-xl flex items-center justify-center active:bg-slate-100">
+                <ResetIcon className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* BOX DESTRA: Suoni e Preset Rapidi */}
+          <div className="flex-1 flex flex-col items-end gap-2">
+            <div className="w-full flex items-center gap-1 bg-white dark:bg-slate-800 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm relative">
+              <Volume2 className="w-3 h-3 text-slate-400 shrink-0 ml-1" />
+              <select value={settings.soundId || 'digital'} onChange={(e) => onUpdateSettings('soundId', e.target.value)} className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer py-1 w-full text-right truncate">
+                <optgroup label="Predefiniti">
                   {TIMER_SOUNDS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                </select>
-             </div>
-             
-             <div className="flex w-full gap-1">
-               <button onClick={() => manualUpdateTime(Math.max(0, timeLeft - 10))} className="flex-1 py-2 bg-red-50 text-red-600 rounded-lg text-[10px] font-bold border border-red-100 hover:bg-red-100 active:scale-95 transition-all">-10s</button>
-               <button onClick={() => manualUpdateTime(timeLeft + 10)} className="flex-1 py-2 bg-green-50 text-green-600 rounded-lg text-[10px] font-bold border border-green-100 hover:bg-green-100 active:scale-95 transition-all">+10s</button>
-             </div>
-           </div>
+                </optgroup>
+                {customSounds.length > 0 && (
+                  <optgroup label="Personalizzati">
+                    {customSounds.map((s: any) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                  </optgroup>
+                )}
+              </select>
+              <button
+                className="ml-1 p-1 bg-blue-100 text-blue-600 rounded flex-shrink-0 hover:bg-blue-600 hover:text-white transition-colors"
+                title="Aggiungi suono (mp3/ogg/wav)"
+                onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = 'audio/*';
+                  input.onchange = (e: any) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                      const label = prompt("Inserisci il nome per questo suono:", file.name.split('.')[0]);
+                      if (label) onAddCustomSound(file, label);
+                    }
+                  };
+                  input.click();
+                }}
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+            </div>
+
+            <div className="flex w-full gap-1">
+              <button onClick={() => manualUpdateTime(Math.max(0, timeLeft - 10))} className="flex-1 py-2 bg-red-50 text-red-600 rounded-lg text-[10px] font-bold border border-red-100 hover:bg-red-100 active:scale-95 transition-all">-10s</button>
+              <button onClick={() => manualUpdateTime(timeLeft + 10)} className="flex-1 py-2 bg-green-50 text-green-600 rounded-lg text-[10px] font-bold border border-green-100 hover:bg-green-100 active:scale-95 transition-all">+10s</button>
+            </div>
+          </div>
         </div>
-        
+
         {/* PRESET SCROLLABILI */}
         <div className="w-full border-t dark:border-slate-700 pt-2">
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide w-full touch-pan-x">
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide w-full touch-pan-x">
             {presets.map(p => (
-                <div key={p} className="relative group shrink-0">
-                    <button onClick={() => { stopAudio(); setIsActive(false); manualUpdateTime(p); }} className="px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white transition-all min-w-[50px]">
-                    {Math.floor(p / 60)}:{(p % 60).toString().padStart(2, '0')}
-                    </button>
-                    <button onClick={() => onUpdateSettings('presets', presets.filter(val => val !== p))} className="absolute -top-1.5 -right-1.5 bg-white text-red-500 border border-red-100 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm z-10"><X className="w-3 h-3"/></button>
-                </div>
+              <div key={p} className="relative group shrink-0">
+                <button onClick={() => { stopAudio(); setIsActive(false); manualUpdateTime(p); }} className="px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white transition-all min-w-[50px]">
+                  {Math.floor(p / 60)}:{(p % 60).toString().padStart(2, '0')}
+                </button>
+                <button onClick={() => onUpdateSettings('presets', presets.filter(val => val !== p))} className="absolute -top-1.5 -right-1.5 bg-white text-red-500 border border-red-100 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm z-10"><X className="w-3 h-3" /></button>
+              </div>
             ))}
             <div className="w-px h-6 bg-slate-200 mx-1 shrink-0"></div>
-            
+
             <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 p-1 rounded-lg border border-slate-200 shrink-0">
-                <input type="number" placeholder="M" value={newMin} onChange={(e) => setNewMin(e.target.value)} className="w-6 bg-transparent text-center font-bold outline-none text-xs" />
-                <span className="text-slate-300 text-xs">:</span>
-                <input type="number" placeholder="S" value={newSec} onChange={(e) => setNewSec(e.target.value)} className="w-6 bg-transparent text-center font-bold outline-none text-xs" />
-                <button onClick={addPreset} className="p-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-600 hover:text-white transition-colors"><Plus className="w-3 h-3"/></button>
+              <input type="number" placeholder="M" value={newMin} onChange={(e) => setNewMin(e.target.value)} className="w-6 bg-transparent text-center font-bold outline-none text-xs" />
+              <span className="text-slate-300 text-xs">:</span>
+              <input type="number" placeholder="S" value={newSec} onChange={(e) => setNewSec(e.target.value)} className="w-6 bg-transparent text-center font-bold outline-none text-xs" />
+              <button onClick={addPreset} className="p-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-600 hover:text-white transition-colors"><Plus className="w-3 h-3" /></button>
             </div>
-            </div>
+          </div>
         </div>
       </div>
 
-      {/* BOCCIA LIQUIDA RIDOTTA (w-56 mobile / w-96 desktop) */}
-      <div 
-        className="relative w-56 h-56 md:w-96 md:h-96 rounded-full border-[10px] md:border-[12px] border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden flex items-center justify-center transition-all duration-700 bg-white dark:bg-slate-900 mx-auto"
-        style={{ backgroundColor: getBackgroundColor() }}
-      >
-         {/* 1. Immagine Sotto */}
-         <div className="absolute inset-0 flex items-center justify-center p-10 md:p-16 z-0 cursor-pointer" onClick={onSelectImage}>
-            {settings.timerImage ? (
-                settings.timerImage.imageUrl ? <img src={settings.timerImage.imageUrl} className="w-full h-full object-contain animate-in fade-in zoom-in duration-500 drop-shadow-md"/> : 
-                settings.timerImage.iconId ? (() => { const IconComp = getIconComponent(settings.timerImage.iconId); const style = getPresetStyle(settings.timerImage.iconId); return <IconComp className={`w-28 h-28 md:w-40 md:h-40 ${style.icon} filter drop-shadow-sm`} />; })() : null
-            ) : (
-               <div className="flex flex-col items-center text-slate-300 dark:text-slate-600 transition-colors hover:text-blue-400"><ImageIcon className="w-12 h-12 md:w-20 md:h-20 mb-2 opacity-50"/><span className="text-[9px] md:text-xs font-bold uppercase tracking-widest text-center">Tocca per immagine</span></div>
-            )}
-         </div>
+      {/* RENDER STILE TIMER */}
+      {/* RENDER STILE TIMER */}
+      {settings.timerStyle === 'mouse' ? (() => {
+        const totalCheese = 20;
+        const cols = 5;
+        const isFinished = timeLeft === 0 && (!isActive || settings.duration > 0);
+        const progressNorm = isFinished ? 1 : 1 - (timeLeft / Math.max(1, settings.duration));
+        const currentIdx = Math.min(totalCheese - 1, Math.floor(progressNorm * totalCheese));
 
-         {/* 2. Liquido e Onde SVG (Doppio ciclo per loop perfetto) */}
-         <div className="liquid-container" style={{ height: `${percentage}%`, backgroundColor: currentColor }}>
-            {percentage > 0.5 && percentage < 99.5 && (
-              <div className="wave-wrapper" style={{ color: currentColor, marginBottom: '-1px' }}>
-                 <svg className="wave-svg wave-back" viewBox="0 0 2000 100" preserveAspectRatio="none">
-                    <path d="M 0 100 V 50 Q 250 10 500 50 T 1000 50 T 1500 50 T 2000 50 V 100 H 0 Z" fill="currentColor"/>
-                 </svg>
-                 <svg className="wave-svg wave-front" viewBox="0 0 2000 100" preserveAspectRatio="none">
-                    <path d="M 0 100 V 50 Q 250 10 500 50 T 1000 50 T 1500 50 T 2000 50 V 100 H 0 Z" fill="currentColor"/>
-                 </svg>
+        const getRowCol = (idx: number) => {
+          const r = Math.floor(idx / cols);
+          const isOdd = r % 2 !== 0;
+          const c = isOdd ? (cols - 1) - (idx % cols) : (idx % cols);
+          return { r, c, isOdd };
+        }
+
+        const { r: mouseRow, c: mouseCol, isOdd: mouseFacesLeft } = getRowCol(currentIdx);
+
+        return (
+          <div className="w-full mt-6 bg-slate-50 dark:bg-slate-800/50 rounded-3xl p-4 md:p-8 border border-slate-200 dark:border-slate-700 relative overflow-hidden flex flex-col items-center shadow-sm">
+
+            {/* Play/Pause Overlay se spento */}
+            {!isActive && !isFinished && timeLeft > 0 && (
+              <div className="absolute inset-0 z-40 bg-black/5 dark:bg-black/20 flex flex-col items-center justify-center cursor-pointer backdrop-blur-[1px] transition-all hover:bg-black/10" onClick={toggleTimer}>
+                <Play className="w-16 h-16 text-amber-500 bg-white/90 rounded-full p-4 shadow-xl mb-2 hover:scale-110 transition-transform" />
+                <span className="font-bold text-amber-700 bg-white/90 px-4 py-1.5 rounded-full text-sm shadow-sm">Tocca per Avviare</span>
               </div>
             )}
-         </div>
 
-         {/* 3. Countdown */}
-         {isActive && (
-            <div className="absolute z-30 font-black text-4xl md:text-6xl text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] opacity-90 pointer-events-none">
-               {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
+            {/* Main Area */}
+            <div className="relative w-full max-w-sm aspect-[5/4] bg-white dark:bg-slate-800 rounded-2xl shadow-inner border-4 border-amber-100 dark:border-slate-700 overflow-hidden">
+
+              {/* Base Reward Image layer */}
+              <div className="absolute inset-0 flex items-center justify-center p-6 cursor-pointer z-0 transition-opacity duration-1000" onClick={onSelectImage}>
+                {settings.timerImage ? (
+                  settings.timerImage.imageUrl ? <img src={settings.timerImage.imageUrl} className={`w-full h-full object-contain drop-shadow-xl transition-all duration-1000 ease-out ${isFinished ? 'scale-110 opacity-100' : 'opacity-40 grayscale-[30%]'}`} /> :
+                    settings.timerImage.iconId ? (() => { const IconComp = getIconComponent(settings.timerImage.iconId); const style = getPresetStyle(settings.timerImage.iconId); return <IconComp className={`w-32 h-32 ${style.icon} transition-all duration-1000 ease-out ${isFinished ? 'scale-125 opacity-100 drop-shadow-2xl' : 'opacity-40'}`} />; })() : null
+                ) : (
+                  <div className="text-center text-slate-300 dark:text-slate-600"><ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50" /><span className="text-xs font-bold uppercase tracking-widest text-center">Tocca img finale</span></div>
+                )}
+              </div>
+
+              {/* Grid Layer */}
+              <div className="absolute inset-0 z-10 grid grid-cols-5 grid-rows-4 p-1 md:p-2 gap-1 md:gap-2">
+                {Array.from({ length: totalCheese }).map((_, physicalIdx) => {
+                  const r = Math.floor(physicalIdx / cols);
+                  const c = physicalIdx % cols;
+                  const isOdd = r % 2 !== 0;
+                  const logicalIdx = isOdd ? r * cols + (cols - 1 - c) : r * cols + c;
+
+                  const isEaten = isFinished || logicalIdx < currentIdx;
+                  const isEating = !isFinished && logicalIdx === currentIdx;
+
+                  return (
+                    <div key={physicalIdx} className="w-full aspect-square flex items-center justify-center relative">
+                      <CheeseWedge isEaten={isEaten} isEating={isEating && isActive} />
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Mouse Layer */}
+              <div className="absolute z-20 pointer-events-none transition-all duration-700 ease-out"
+                style={{
+                  top: `calc((${mouseRow} * 100%) / 4)`,
+                  left: `calc((${mouseCol} * 100%) / 5)`,
+                  width: '20%',
+                  height: '25%'
+                }}>
+                <div className="w-full h-full flex items-center justify-center">
+                  <MouseCharacter isActive={isActive} facesLeft={mouseFacesLeft} isFinished={isFinished} />
+                </div>
+              </div>
             </div>
-         )}
-      </div>
+
+            {/* Countdown */}
+            {isActive && !isFinished && (
+              <div className="mt-6 font-black text-4xl text-amber-500 tabular-nums drop-shadow-sm">
+                {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
+              </div>
+            )}
+            {isFinished && (
+              <div className="mt-6 font-black text-4xl text-green-500 tabular-nums animate-bounce drop-shadow-sm">
+                Finito!
+              </div>
+            )}
+          </div>
+        );
+      })() : (
+        /* BOCCIA LIQUIDA RIDOTTA (w-56 mobile / w-96 desktop) */
+        <div
+          className="relative mt-4 w-56 h-56 md:w-96 md:h-96 rounded-full border-[10px] md:border-[12px] border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden flex items-center justify-center transition-all duration-700 bg-white dark:bg-slate-900 mx-auto"
+          style={{ backgroundColor: getBackgroundColor() }}
+        >
+          {/* 1. Immagine Sotto */}
+          <div className="absolute inset-0 flex items-center justify-center p-10 md:p-16 z-0 cursor-pointer" onClick={onSelectImage}>
+            {settings.timerImage ? (
+              settings.timerImage.imageUrl ? <img src={settings.timerImage.imageUrl} className="w-full h-full object-contain animate-in fade-in zoom-in duration-500 drop-shadow-md" /> :
+                settings.timerImage.iconId ? (() => { const IconComp = getIconComponent(settings.timerImage.iconId); const style = getPresetStyle(settings.timerImage.iconId); return <IconComp className={`w-28 h-28 md:w-40 md:h-40 ${style.icon} filter drop-shadow-sm`} />; })() : null
+            ) : (
+              <div className="flex flex-col items-center text-slate-300 dark:text-slate-600 transition-colors hover:text-blue-400"><ImageIcon className="w-12 h-12 md:w-20 md:h-20 mb-2 opacity-50" /><span className="text-[9px] md:text-xs font-bold uppercase tracking-widest text-center">Tocca per immagine</span></div>
+            )}
+          </div>
+
+          {/* 2. Liquido e Onde SVG (Doppio ciclo per loop perfetto) */}
+          <div className="liquid-container" style={{ height: `${percentage}%`, backgroundColor: currentColor }}>
+            {percentage > 0.5 && percentage < 99.5 && (
+              <div className="wave-wrapper" style={{ color: currentColor, marginBottom: '-1px' }}>
+                <svg className="wave-svg wave-back" viewBox="0 0 2000 100" preserveAspectRatio="none">
+                  <path d="M 0 100 V 50 Q 250 10 500 50 T 1000 50 T 1500 50 T 2000 50 V 100 H 0 Z" fill="currentColor" />
+                </svg>
+                <svg className="wave-svg wave-front" viewBox="0 0 2000 100" preserveAspectRatio="none">
+                  <path d="M 0 100 V 50 Q 250 10 500 50 T 1000 50 T 1500 50 T 2000 50 V 100 H 0 Z" fill="currentColor" />
+                </svg>
+              </div>
+            )}
+          </div>
+
+          {/* 3. Countdown */}
+          {isActive && (
+            <div className="absolute z-30 font-black text-4xl md:text-6xl text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] opacity-90 pointer-events-none">
+              {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -1656,29 +1931,31 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage }) => {
 // --- APP COMPONENT ---
 export default function App() {
   const [darkMode, setDarkMode] = useState(false);
-  const [view, setView] = useState('dashboard'); 
+  const [view, setView] = useState('dashboard');
   const [boards, setBoards] = useState([]);
   const [dashboardSearch, setDashboardSearch] = useState('');
-  const [dashboardFilter, setDashboardFilter] = useState('all'); 
+  const [dashboardFilter, setDashboardFilter] = useState('all');
   const [dashboardSort, setDashboardSort] = useState('date-desc');
-  const [currentBoard, setCurrentBoard] = useState(null);
-  const [activePageIndex, setActivePageIndex] = useState(0); 
+  const [currentBoard, setCurrentBoard] = useState<any>(null);
+  const [activePageIndex, setActivePageIndex] = useState(0);
   const [showSearch, setShowSearch] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
-  const [editingContext, setEditingContext] = useState(null); 
+  const [editingContext, setEditingContext] = useState(null);
   const [linkedSchedule, setLinkedSchedule] = useState(null);
   const [openMenuId, setOpenMenuId] = useState(null);
-  const fileInputRef = useRef(null); 
+  const fileInputRef = useRef(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [showSyncModal, setShowSyncModal] = useState(false);
   const [activeItemId, setActiveItemId] = useState(null); // NUOVO STATO
   const [dropIndicator, setDropIndicator] = useState({ index: null, position: null }); // { index: 0, position: 'before' | 'after' }
+  const [customSounds, setCustomSounds] = useState<any[]>([]); // Soni custom in memoria
 
   const handleChildClick = (itemId) => {
     setActiveItemId(itemId);
     // Opzionale: Rimuovi l'evidenziazione dopo 2 secondi
     setTimeout(() => setActiveItemId(null), 2000);
-    };
+  };
 
   useEffect(() => {
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) setDarkMode(true);
@@ -1691,13 +1968,50 @@ export default function App() {
   }, [darkMode]);
 
   useEffect(() => {
+    let unmounted = false;
+    let listener: PluginListenerHandle | null = null;
+
+    const setupListener = async () => {
+      listener = await CapApp.addListener('backButton', () => {
+        // Usa una funzione in setState se hai bisogno del valore corrente 
+        // oppure sfrutta le dipendenze in un deps array (qui lo facciamo re-registrando il listener)
+        if (showHelp) {
+          setShowHelp(false);
+          return;
+        }
+        if (showSyncModal) {
+          setShowSyncModal(false);
+          return;
+        }
+        if (showSearch) {
+          setShowSearch(false);
+          setEditingContext(null);
+          return;
+        }
+        if (view === 'editor') {
+          setView('dashboard');
+          setCurrentBoard(null);
+          return;
+        }
+        CapApp.exitApp();
+      });
+    };
+    setupListener();
+
+    return () => {
+      unmounted = true;
+      if (listener) listener.remove();
+    };
+  }, [showHelp, showSyncModal, showSearch, view]);
+
+  useEffect(() => {
     const fetchLinked = async () => {
       if (currentBoard?.type === 'token' && currentBoard.settings?.linkedScheduleId) {
         try {
           const linked = await dbOperations.getBoard(currentBoard.settings.linkedScheduleId);
           if (linked && linked.items) {
-             linked.items = await Promise.all(linked.items.map(async (item) => ({ ...item, imageUrl: await getImageUrl(item.sourceId) })));
-             setLinkedSchedule(linked);
+            linked.items = await Promise.all(linked.items.map(async (item) => ({ ...item, imageUrl: await getImageUrl(item.sourceId) })));
+            setLinkedSchedule(linked);
           } else { setLinkedSchedule(null); }
         } catch (e) { setLinkedSchedule(null); }
       } else { setLinkedSchedule(null); }
@@ -1706,18 +2020,48 @@ export default function App() {
   }, [currentBoard]);
 
   const loadBoards = async () => {
-    const allBoards = await dbOperations.getAllBoards();
+    const allBoards: any[] = await dbOperations.getAllBoards() as any;
     const boardsWithCovers = await Promise.all(allBoards.map(async (b) => {
       if (b.coverImage && b.coverImage.sourceId && !b.coverImage.sourceId.startsWith('preset-')) {
-           b.coverImage.imageUrl = await getImageUrl(b.coverImage.sourceId);
+        b.coverImage.imageUrl = await getImageUrl(b.coverImage.sourceId);
       }
       return b;
     }));
-    setBoards(boardsWithCovers);
+    setBoards(boardsWithCovers as any);
+
+    // Carica anche i suoni personalizzati
+    try {
+      const sounds: any[] = await dbOperations.getAllSounds() as any;
+      if (sounds) {
+        const mappedSounds = sounds.map(s => ({
+          id: s.id,
+          label: s.label,
+          url: URL.createObjectURL(s.blob)
+        }));
+        setCustomSounds(mappedSounds);
+      }
+    } catch (e) { console.error("Error loading sounds", e); }
+  };
+
+  const handleAddCustomSound = async (file: File, label: string) => {
+    const newSoundId = 'custom-' + crypto.randomUUID();
+    await dbOperations.putSound({
+      id: newSoundId,
+      label,
+      blob: file
+    });
+    // Ricarica la lista per aggiornare lo state
+    await loadBoards();
+    // Auto-seleziona il nuovo suono
+    setCurrentBoard((prev: any) => ({
+      ...prev,
+      settings: { ...prev.settings, soundId: newSoundId }
+    }));
+    setIsSaving(true);
   };
 
   // --- SNAPSHOT SYSTEM (AUTO-SAVE) ---
-  
+
   // 1. Salva automaticamente ogni volta che currentBoard cambia
   useEffect(() => {
     if (currentBoard) {
@@ -1732,7 +2076,7 @@ export default function App() {
       }, 1000);
       return () => clearTimeout(timeoutId);
     } else if (view === 'dashboard') {
-        localStorage.removeItem('caa_snapshot_board');
+      localStorage.removeItem('caa_snapshot_board');
     }
   }, [currentBoard, activePageIndex, view]);
 
@@ -1748,36 +2092,36 @@ export default function App() {
 
           // Se lo snapshot è recente (meno di 24 ore) chiediamo, altrimenti ignoriamo
           if (diffMins < 1440) {
-             if (confirm(`Ho trovato un progetto aperto non salvato ("${parsedBoard.title}"). Vuoi ripristinarlo?`)) {
-                
-                // CRUCIALE: Reidratiamo le immagini dal DB IndexedDB
-                // perché i Blob URL del localStorage sono morti.
-                const rehydrate = async (board) => {
-                    const refreshItems = async (items) => Promise.all((items || []).map(async (item) => ({ 
-                        ...item, 
-                        imageUrl: await getImageUrl(item.sourceId) 
-                    })));
+            if (confirm(`Ho trovato un progetto aperto non salvato ("${parsedBoard.title}"). Vuoi ripristinarlo?`)) {
 
-                    if (board.items) board.items = await refreshItems(board.items);
-                    if (board.pages) board.pages = await Promise.all(board.pages.map(async p => ({...p, items: await refreshItems(p.items)})));
-                    
-                    // Gestione immagini speciali (Token, Timer, Cover)
-                    if (board.settings?.tokenImage?.sourceId) board.settings.tokenImage.imageUrl = await getImageUrl(board.settings.tokenImage.sourceId);
-                    if (board.settings?.rewardImage?.sourceId) board.settings.rewardImage.imageUrl = await getImageUrl(board.settings.rewardImage.sourceId);
-                    if (board.settings?.timerImage?.sourceId) board.settings.timerImage.imageUrl = await getImageUrl(board.settings.timerImage.sourceId);
-                    
-                    return board;
-                };
+              // CRUCIALE: Reidratiamo le immagini dal DB IndexedDB
+              // perché i Blob URL del localStorage sono morti.
+              const rehydrate = async (board) => {
+                const refreshItems = async (items) => Promise.all((items || []).map(async (item) => ({
+                  ...item,
+                  imageUrl: await getImageUrl(item.sourceId)
+                })));
 
-                const hydratedBoard = await rehydrate(parsedBoard);
-                
-                setCurrentBoard(hydratedBoard);
-                setActivePageIndex(Number(localStorage.getItem('caa_snapshot_page')) || 0);
-                setView('editor');
-             } else {
-               // Se dice no, puliamo
-               localStorage.removeItem('caa_snapshot_board');
-             }
+                if (board.items) board.items = await refreshItems(board.items);
+                if (board.pages) board.pages = await Promise.all(board.pages.map(async p => ({ ...p, items: await refreshItems(p.items) })));
+
+                // Gestione immagini speciali (Token, Timer, Cover)
+                if (board.settings?.tokenImage?.sourceId) board.settings.tokenImage.imageUrl = await getImageUrl(board.settings.tokenImage.sourceId);
+                if (board.settings?.rewardImage?.sourceId) board.settings.rewardImage.imageUrl = await getImageUrl(board.settings.rewardImage.sourceId);
+                if (board.settings?.timerImage?.sourceId) board.settings.timerImage.imageUrl = await getImageUrl(board.settings.timerImage.sourceId);
+
+                return board;
+              };
+
+              const hydratedBoard = await rehydrate(parsedBoard);
+
+              setCurrentBoard(hydratedBoard);
+              setActivePageIndex(Number(localStorage.getItem('caa_snapshot_page')) || 0);
+              setView('editor');
+            } else {
+              // Se dice no, puliamo
+              localStorage.removeItem('caa_snapshot_board');
+            }
           }
         } catch (e) {
           console.error("Errore ripristino snapshot", e);
@@ -1785,84 +2129,28 @@ export default function App() {
         }
       }
     };
-    
+
     // Eseguiamo il controllo dopo un breve ritardo per non bloccare il render iniziale
     setTimeout(checkSnapshot, 500);
   }, []);
 
-  const exportData = async () => {
-    try {
-      const boardsData = await dbOperations.getAllBoards();
-      const imagesData = await dbOperations.getAllImages();
-      const imagesExport = await Promise.all(imagesData.map(async (img) => ({
-        ...img,
-        blob: await blobToBase64(img.blob)
-      })));
-      const backup = {
-        date: new Date().toISOString(),
-        version: 1,
-        boards: boardsData,
-        images: imagesExport
-      };
-      const blob = new Blob([JSON.stringify(backup)], {type: "application/json"});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `caa_backup_${new Date().toISOString().slice(0,10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      alert("Errore durante l'esportazione.");
-      console.error(e);
-    }
-  };
-
-  const importData = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (!confirm("ATTENZIONE: L'importazione cancellerà tutti i dati attuali. Vuoi continuare?")) {
-      e.target.value = null;
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const backup = JSON.parse(event.target.result);
-        if (!backup.boards || !backup.images) throw new Error("File non valido");
-        await dbOperations.clearDatabase();
-        for (const img of backup.images) {
-          const blob = await base64ToBlob(img.blob);
-          await dbOperations.addImage({ ...img, blob });
-        }
-        for (const board of backup.boards) {
-          await dbOperations.addBoard(board);
-        }
-        alert("Ripristino completato con successo!");
-        window.location.reload();
-      } catch (err) {
-        alert("Errore durante il ripristino. Il file potrebbe essere corrotto.");
-        console.error(err);
-      }
-    };
-    reader.readAsText(file);
-  };
 
   const createBoard = (type) => {
     const newBoard = {
-      title: type === 'sequence' ? 'Nuova Agenda' : 
-             type === 'token' ? 'Token Economy' : 
-             type === 'story' ? 'Nuova Storia Sociale' : 
-             type === 'pecs' ? 'Griglia PECS' :
-             type === 'timer' ? 'Nuovo Timer Visivo' : // <--- NUOVO
-             'Nuova Comunicazione',
+      title: type === 'sequence' ? 'Nuova Agenda' :
+        type === 'token' ? 'Token Economy' :
+          type === 'story' ? 'Nuova Storia Sociale' :
+            type === 'pecs' ? 'Griglia PECS' :
+              type === 'timer' ? 'Nuovo Timer Visivo' : // <--- NUOVO
+                'Nuova Comunicazione',
       type: type,
       pages: (type === 'grid' || type === 'pecs') ? [{ id: crypto.randomUUID(), name: 'Pagina 1', items: [] }] : undefined,
       items: (type === 'sequence' || type === 'story') ? [] : undefined,
-      settings: type === 'sequence' ? { orientation: 'vertical' } : 
-                type === 'token' ? { tokenCount: 5, earnedCount: 0, linkedScheduleId: '', tokenImage: null, rewardImage: null } : 
-                type === 'pecs' ? { cardWidth: 4, cardHeight: 4, gap: 0, showCutLines: true, labelPosition: 'bottom' } :
-                type === 'story' ? { printOrientation: 'portrait' } : 
-                type === 'timer' ? { duration: 60, timerImage: null } : // <--- NUOVO
+      settings: type === 'sequence' ? { orientation: 'vertical' } :
+        type === 'token' ? { tokenCount: 5, earnedCount: 0, linkedScheduleId: '', tokenImage: null, rewardImage: null } :
+          type === 'pecs' ? { cardWidth: 4, cardHeight: 4, gap: 0, showCutLines: true, labelPosition: 'bottom' } :
+            type === 'story' ? { printOrientation: 'portrait' } :
+              type === 'timer' ? { duration: 60, timerImage: null, timerStyle: 'liquid' } : // <--- NUOVO CON timerStyle di default
                 {},
       updatedAt: new Date()
     };
@@ -1889,8 +2177,8 @@ export default function App() {
     if (board.items) board.items = await refreshImages(board.items);
     if (board.pages) board.pages = await Promise.all(board.pages.map(async (page) => ({ ...page, items: await refreshImages(page.items) })));
     if (board.type === 'token' && board.settings) {
-       if (board.settings.tokenImage) board.settings.tokenImage.imageUrl = await getImageUrl(board.settings.tokenImage.sourceId);
-       if (board.settings.rewardImage) board.settings.rewardImage.imageUrl = await getImageUrl(board.settings.rewardImage.sourceId);
+      if (board.settings.tokenImage) board.settings.tokenImage.imageUrl = await getImageUrl(board.settings.tokenImage.sourceId);
+      if (board.settings.rewardImage) board.settings.rewardImage.imageUrl = await getImageUrl(board.settings.rewardImage.sourceId);
     }
     if (board.type === 'grid' && !board.pages && board.items) { board.pages = [{ id: crypto.randomUUID(), name: 'Principale', items: board.items }]; board.items = undefined; }
     if (board.type === 'sequence' && !board.settings) board.settings = { orientation: 'vertical' };
@@ -1904,7 +2192,7 @@ export default function App() {
     if (!currentBoard) return;
     setIsSaving(true);
     const boardToSave = { ...currentBoard, updatedAt: new Date() };
-    if (currentBoard.id) { await dbOperations.updateBoard(boardToSave); } 
+    if (currentBoard.id) { await dbOperations.updateBoard(boardToSave); }
     else { const id = await dbOperations.addBoard(boardToSave); setCurrentBoard({ ...boardToSave, id }); }
     await loadBoards();
     setTimeout(() => setIsSaving(false), 500);
@@ -1922,7 +2210,7 @@ export default function App() {
     e.stopPropagation();
     if (confirm("Sei sicuro di voler eliminare questo progetto?")) {
       await dbOperations.deleteBoard(id);
-      await loadBoards(); 
+      await loadBoards();
     }
     setOpenMenuId(null);
   };
@@ -1934,18 +2222,18 @@ export default function App() {
     setOpenMenuId(null);
   };
 
-// --- IN APP: handleSearchSelect (Versione Finale Corretta) ---
+  // --- IN APP: handleSearchSelect (Versione Finale Corretta) ---
   const handleSearchSelect = async (selectedData) => {
     // Gestiamo sia il caso di un singolo oggetto che di un array (selezione multipla)
     const itemsToAdd = Array.isArray(selectedData) ? selectedData : [selectedData];
     const firstItem = itemsToAdd[0];
 
     // Determiniamo se stiamo sostituendo un elemento esistente
-    const isReplacing = editingContext?.type === 'boardCover' || 
-                        editingContext?.type === 'tokenImage' || 
-                        editingContext?.type === 'rewardImage' || 
-                        editingContext?.type === 'timerImage' || 
-                        (editingContext?.type === 'item' && editingContext.id);
+    const isReplacing = editingContext?.type === 'boardCover' ||
+      editingContext?.type === 'tokenImage' ||
+      editingContext?.type === 'rewardImage' ||
+      editingContext?.type === 'timerImage' ||
+      (editingContext?.type === 'item' && editingContext.id);
 
     if (editingContext?.type === 'boardCover') {
       const boardToUpdate = await dbOperations.getBoard(editingContext.boardId);
@@ -1955,33 +2243,33 @@ export default function App() {
         await loadBoards();
       }
     } else if (editingContext?.type === 'tokenImage') {
-      setCurrentBoard(prev => ({ 
-        ...prev, 
-        settings: { ...prev.settings, tokenImage: firstItem } 
+      setCurrentBoard(prev => ({
+        ...prev,
+        settings: { ...prev.settings, tokenImage: firstItem }
       }));
     } else if (editingContext?.type === 'rewardImage') {
-       setCurrentBoard(prev => ({ 
-         ...prev, 
-         settings: { ...prev.settings, rewardImage: firstItem } 
-       }));
+      setCurrentBoard(prev => ({
+        ...prev,
+        settings: { ...prev.settings, rewardImage: firstItem }
+      }));
     } else if (editingContext?.type === 'timerImage') {
       const itemToSave = Array.isArray(selectedData) ? selectedData[0] : selectedData;
-      
+
       // Calcolo colore dominante sicuro (fallback se manca)
       const domColor = itemToSave.dominantColor || { r: 240, g: 240, b: 240 };
 
-      setCurrentBoard(prev => ({ 
-        ...prev, 
-        settings: { 
-          ...prev.settings, 
+      setCurrentBoard(prev => ({
+        ...prev,
+        settings: {
+          ...prev.settings,
           timerImage: {
             ...itemToSave,
             id: itemToSave.id || crypto.randomUUID(), // Assicuriamo un ID
             imageUrl: itemToSave.imageUrl,
             iconId: itemToSave.iconId, // FONDAMENTALE per i preset
             dominantColor: domColor    // Salviamo il colore per lo sfondo
-          } 
-        } 
+          }
+        }
       }));
       setEditingContext(null);
       setShowSearch(false);
@@ -1989,12 +2277,12 @@ export default function App() {
       // Sostituzione di un singolo simbolo in griglia o agenda
       setCurrentBoard(prev => {
         const copy = { ...prev };
-        const updateFn = (item) => item.id === editingContext.id ? { 
-          ...item, 
-          ...firstItem, 
+        const updateFn = (item) => item.id === editingContext.id ? {
+          ...item,
+          ...firstItem,
           label: item.label // Mantiene l'etichetta originale durante la sostituzione immagine
         } : item;
-        
+
         if (copy.type === 'grid') copy.pages[activePageIndex].items = copy.pages[activePageIndex].items.map(updateFn);
         else copy.items = copy.items.map(updateFn);
         return copy;
@@ -2044,7 +2332,7 @@ export default function App() {
     if (currentBoard.type === 'sequence') {
       setCurrentBoard(prev => ({ ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, completed: !i.completed } : i) }));
     } else if (currentBoard.type === 'token') {
-       setLinkedSchedule(prev => ({ ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, completed: !i.completed } : i) }));
+      setLinkedSchedule(prev => ({ ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, completed: !i.completed } : i) }));
     }
   };
 
@@ -2069,14 +2357,14 @@ export default function App() {
   const dragOverItem = useRef();
   const dragOverPage = useRef(); // NUOVO: Serve per capire se siamo sopra una pagina
 
-  const handleDragStart = (e, position) => { 
-    dragItem.current = position; 
+  const handleDragStart = (e, position) => {
+    dragItem.current = position;
     // Opzionale: Effetto visivo di trascinamento
     e.dataTransfer.effectAllowed = "move";
   };
 
-  const handleDragEnter = (e, position) => { 
-    dragOverItem.current = position; 
+  const handleDragEnter = (e, position) => {
+    dragOverItem.current = position;
     dragOverPage.current = null; // Resetta pagina se siamo su un item
   };
 
@@ -2087,29 +2375,29 @@ export default function App() {
     dragOverItem.current = null; // Resetta item se siamo su una pagina
   };
 
-// Calcola se mostrare la riga PRIMA o DOPO l'elemento
+  // Calcola se mostrare la riga PRIMA o DOPO l'elemento
   const handleDragOver = (e, index) => {
     e.preventDefault(); // Fondamentale per permettere il drop
-    
+
     // Se stiamo trascinando sopra una pagina (tab), non mostrare indicatori item
     if (dragOverPage.current) {
-        setDropIndicator({ index: null, position: null });
-        return;
+      setDropIndicator({ index: null, position: null });
+      return;
     }
 
     const rect = e.currentTarget.getBoundingClientRect();
     const isVertical = currentBoard.type === 'sequence' && currentBoard.settings.orientation === 'vertical';
-    
+
     // Calcoliamo il punto medio
-    const midpoint = isVertical 
-      ? rect.y + rect.height / 2 
+    const midpoint = isVertical
+      ? rect.y + rect.height / 2
       : rect.x + rect.width / 2;
-    
+
     // Calcoliamo la posizione del cursore/dito
     const clientPos = isVertical ? e.clientY : e.clientX;
 
     const position = clientPos < midpoint ? 'before' : 'after';
-    
+
     // Aggiorniamo solo se è cambiato (per performance)
     if (dropIndicator.index !== index || dropIndicator.position !== position) {
       setDropIndicator({ index, position });
@@ -2122,7 +2410,7 @@ export default function App() {
     // Non resettiamo subito altrimenti la riga lampeggia, 
     // il reset vero avviene nel DragEnd o se entriamo in un altro item
   };
-  
+
   const handleDragEnd = (e) => {
     setDropIndicator({ index: null, position: null }); // Pulisci la riga blu
 
@@ -2130,13 +2418,13 @@ export default function App() {
 
     // Logica spostamento tra pagine (rimane uguale a prima)
     if (dragOverPage.current && currentBoard.type === 'grid') {
-       // ... (copia la logica precedente per le pagine, non cambia) ...
-       const items = [...getActiveItems()];
-       const targetPageId = dragOverPage.current;
-       if (currentBoard.pages[activePageIndex].id === targetPageId) return;
-       const itemToMove = items[dragItem.current];
-       
-       setCurrentBoard(prev => {
+      // ... (copia la logica precedente per le pagine, non cambia) ...
+      const items = [...getActiveItems()];
+      const targetPageId = dragOverPage.current;
+      if (currentBoard.pages[activePageIndex].id === targetPageId) return;
+      const itemToMove = items[dragItem.current];
+
+      setCurrentBoard(prev => {
         const copy = { ...prev };
         copy.pages[activePageIndex].items.splice(dragItem.current, 1);
         const targetPage = copy.pages.find(p => p.id === targetPageId);
@@ -2159,17 +2447,17 @@ export default function App() {
       // Calcola il nuovo indice
       // Attenzione: se togliamo un elemento prima del target, gli indici scalano
       let newIndex = hoverIndex;
-      
+
       // Aggiustamenti matematici per array
       if (oldIndex < hoverIndex) {
-        newIndex = position === 'after' ? hoverIndex : hoverIndex - 1; 
+        newIndex = position === 'after' ? hoverIndex : hoverIndex - 1;
       } else {
         newIndex = position === 'after' ? hoverIndex + 1 : hoverIndex;
       }
-      
+
       // Inserisci nella nuova posizione
       items.splice(newIndex, 0, movedItem);
-      
+
       setCurrentBoard(prev => {
         const copy = { ...prev };
         if (copy.type === 'grid') copy.pages[activePageIndex].items = items;
@@ -2184,7 +2472,7 @@ export default function App() {
     dragOverPage.current = null;
   };
 
-  const activeItems = getActiveItems(); 
+  const activeItems = getActiveItems();
 
   const filteredBoards = useMemo(() => {
     let result = [...boards];
@@ -2200,11 +2488,11 @@ export default function App() {
     return result;
   }, [boards, dashboardFilter, dashboardSearch, dashboardSort]);
 
-// Stili per la stampa e visualizzazione PECS (DINAMICO & AGGRESSIVO)
+  // Stili per la stampa e visualizzazione PECS (DINAMICO & AGGRESSIVO)
   // Stili per la stampa e visualizzazione PECS (E ANIMAZIONE TIMER)
   useEffect(() => {
     const orientation = currentBoard?.settings?.printOrientation || 'portrait';
-    
+
     const style = document.createElement('style');
     style.innerHTML = `
       /* --- FIX FLUIDITÀ DRAG AND DROP ANDROID --- */
@@ -2315,13 +2603,13 @@ export default function App() {
     `;
     document.head.appendChild(style);
     return () => {
-      if(document.head.contains(style)) document.head.removeChild(style);
+      if (document.head.contains(style)) document.head.removeChild(style);
     };
   }, [currentBoard?.settings?.printOrientation]);
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-800'}`} onClick={() => setOpenMenuId(null)}>
-      
+
       <header className="print:hidden sticky top-0 z-40 w-full backdrop-blur-md bg-white/80 dark:bg-slate-900/80 border-b dark:border-slate-800 px-4 py-3 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
           {view === 'editor' && <button onClick={() => setView('dashboard')} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors"><ArrowLeft className="w-5 h-5" /></button>}
@@ -2333,14 +2621,11 @@ export default function App() {
         <div className="flex items-center gap-2">
           {view === 'dashboard' && (
             <>
-            <button onClick={() => setShowHelp(true)} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors mr-1" title="Manuale Istruzioni">
-        <HelpCircle className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-      </button>
-      <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1"></div>
-      <input type="file" ref={fileInputRef} onChange={importData} className="hidden" accept=".json" />
-              <input type="file" ref={fileInputRef} onChange={importData} className="hidden" accept=".json" />
-              <button onClick={() => fileInputRef.current?.click()} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors" title="Importa Backup"><UploadIcon className="w-5 h-5" /></button>
-              <button onClick={exportData} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors" title="Esporta Backup"><Download className="w-5 h-5" /></button>
+              <button onClick={() => setShowHelp(true)} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors mr-1" title="Manuale Istruzioni">
+                <HelpCircle className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              </button>
+              <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1"></div>
+              <button onClick={() => setShowSyncModal(true)} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-blue-600 dark:text-blue-400" title="Sincronizzazione e Backup"><Wifi className="w-5 h-5" /></button>
             </>
           )}
           {view === 'editor' && <button onClick={saveBoard} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all ${isSaving ? 'bg-green-500 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg'}`}><Save className="w-4 h-4" /> {isSaving ? 'Salvato!' : 'Salva'}</button>}
@@ -2408,16 +2693,16 @@ export default function App() {
                 <div key={board.id} onClick={() => openBoard(board.id)} className="group bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer flex flex-col overflow-hidden relative">
                   <div className={`h-32 w-full flex items-center justify-center relative bg-slate-100 dark:bg-slate-700/50 ${board.coverImage ? 'p-0' : 'p-4'}`}>
                     {board.coverImage && board.coverImage.iconId ? (
-                        (() => {
-                          const IconComp = getIconComponent(board.coverImage.iconId);
-                          const style = getPresetStyle(board.coverImage.iconId);
-                          return <div className={`w-full h-full flex items-center justify-center ${style.bg}`}><IconComp className={`w-16 h-16 ${style.icon}`} /></div>;
-                        })()
-                      ) : board.coverImage ? (
+                      (() => {
+                        const IconComp = getIconComponent(board.coverImage.iconId);
+                        const style = getPresetStyle(board.coverImage.iconId);
+                        return <div className={`w-full h-full flex items-center justify-center ${style.bg}`}><IconComp className={`w-16 h-16 ${style.icon}`} /></div>;
+                      })()
+                    ) : board.coverImage ? (
                       <img src={board.coverImage.imageUrl} alt="Cover" className="w-full h-full object-cover" />
                     ) : (
                       <div className={`p-4 rounded-full ${board.type === 'sequence' ? 'bg-emerald-100 text-emerald-600' : board.type === 'token' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
-                        {board.type === 'sequence' ? <ListOrdered className="w-8 h-8" /> : board.type === 'token' ? <Trophy className="w-8 h-8"/> : <LayoutGrid className="w-8 h-8" />}
+                        {board.type === 'sequence' ? <ListOrdered className="w-8 h-8" /> : board.type === 'token' ? <Trophy className="w-8 h-8" /> : <LayoutGrid className="w-8 h-8" />}
                       </div>
                     )}
                     <div className="absolute top-2 left-2 px-2 py-1 rounded-md bg-white/90 dark:bg-black/70 text-xs font-bold shadow-sm backdrop-blur-sm">{board.type === 'grid' ? 'Comunicazione' : board.type === 'sequence' ? 'Agenda' : 'Token'}</div>
@@ -2454,7 +2739,7 @@ export default function App() {
                 {!isLocked && (
                   <div className="flex flex-wrap gap-2 w-full md:w-auto items-center">
                     {currentBoard.type === 'sequence' && (
-                       <button onClick={() => updateTokenSettings('orientation', currentBoard.settings?.orientation === 'vertical' ? 'horizontal' : 'vertical')} className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-200">{currentBoard.settings?.orientation === 'vertical' ? <ArrowDown className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />} Orientamento</button>
+                      <button onClick={() => updateTokenSettings('orientation', currentBoard.settings?.orientation === 'vertical' ? 'horizontal' : 'vertical')} className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-200">{currentBoard.settings?.orientation === 'vertical' ? <ArrowDown className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />} Orientamento</button>
                     )}
                     {currentBoard.type === 'token' && (
                       <div className="flex flex-wrap gap-3 items-center w-full md:w-auto p-2 bg-slate-50 dark:bg-slate-900 rounded-lg">
@@ -2479,36 +2764,79 @@ export default function App() {
                 )}
               </div>
               {currentBoard.type === 'grid' && (
-                <div className="flex gap-2 overflow-x-auto pb-1 border-t dark:border-slate-700 pt-4">
+                <div className="flex items-end gap-1 overflow-x-auto pb-0 border-b border-slate-200 dark:border-slate-700 mt-4 px-2 scrollbar-hide">
                   {currentBoard.pages.map((page, index) => (
-                    <div 
-                      key={page.id} 
-                      onClick={() => setActivePageIndex(index)} 
-                      
-                      // --- NUOVI EVENTI PER IL DROP SU PAGINA ---
+                    <div
+                      key={page.id}
+                      onClick={() => setActivePageIndex(index)}
                       onDragEnter={(e) => handleDragEnterPage(e, page.id)}
-                      onDragOver={(e) => e.preventDefault()} // Necessario per HTML5 DnD
-                      // ------------------------------------------
-
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer whitespace-nowrap border transition-all 
-                        ${activePageIndex === index 
-                          ? 'bg-blue-50 border-blue-200 text-blue-700 font-bold' 
-                          : 'bg-white text-slate-600 hover:bg-slate-50 border-transparent hover:border-blue-300' // Feedback visivo hover
-                        }`}
+                      onDragOver={(e) => e.preventDefault()}
+                      className={`
+                        group relative flex items-center gap-2 px-4 py-3 rounded-t-xl cursor-pointer whitespace-nowrap border-t border-x transition-all select-none min-w-[120px] justify-center
+                        ${activePageIndex === index
+                          ? 'bg-slate-100 dark:bg-slate-900/50 border-slate-300 dark:border-slate-600 border-b-transparent text-blue-600 dark:text-blue-400 font-bold z-10 translate-y-[1px]'
+                          : 'bg-white dark:bg-slate-800 text-slate-500 hover:bg-slate-50 border-transparent hover:border-slate-200 mb-0.5'
+                        }
+                      `}
                     >
-                      <span>{page.name}</span>
-                      {!isLocked && currentBoard.pages.length > 1 && (
-                        <X className="w-3 h-3 hover:text-red-500 ml-1" 
-                           onClick={(e) => { 
-                             e.stopPropagation(); 
-                             if(confirm('Eliminare pagina?')) setCurrentBoard(p => { const c = {...p}; c.pages.splice(index,1); return c; }); 
-                             setActivePageIndex(0); 
-                           }} 
-                        />
+                      {/* Doppio click per rinominare */}
+                      <span onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        if (isLocked) return;
+                        const newName = prompt("Rinomina categoria/pagina:", page.name);
+                        if (newName && newName.trim()) {
+                          setCurrentBoard(p => {
+                            const c = { ...p };
+                            c.pages[index].name = newName.trim();
+                            return c;
+                          });
+                        }
+                      }} title="Doppio click per rinominare">
+                        {page.name}
+                      </span>
+
+                      {!isLocked && currentBoard.pages.length > 1 && activePageIndex === index && (
+                        <button
+                          className="p-1 hover:bg-red-100 text-slate-400 hover:text-red-500 rounded-full transition-colors ml-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`Eliminare la pagina "${page.name}" e tutti i suoi simboli?`)) {
+                              setCurrentBoard(p => {
+                                const c = { ...p };
+                                c.pages.splice(index, 1);
+                                return c;
+                              });
+                              setActivePageIndex(0);
+                            }
+                          }}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
                       )}
                     </div>
                   ))}
-                  {!isLocked && <button onClick={() => { const name = prompt('Nome pagina:'); if(name) setCurrentBoard(p => ({...p, pages: [...p.pages, {id:crypto.randomUUID(), name, items:[]}]}))}} className="flex items-center gap-1 px-3 py-2 text-slate-500 hover:text-blue-600 text-sm font-medium"><FilePlus className="w-4 h-4" /> Nuova Pagina</button>}
+
+                  {/* Tasto Aggiungi Pagina (Sempre visibile e indipendente) */}
+                  {!isLocked && (
+                    <button
+                      onClick={() => {
+                        const defaultName = `Pagina ${currentBoard.pages.length + 1}`;
+                        const name = prompt('Nome nuova categoria (es. Cibo, Giochi):', defaultName);
+                        if (name) {
+                          setCurrentBoard(p => ({
+                            ...p,
+                            pages: [...p.pages, { id: crypto.randomUUID(), name, items: [] }]
+                          }));
+                          // Switch automatico alla nuova pagina
+                          setTimeout(() => setActivePageIndex(currentBoard.pages.length), 50);
+                        }
+                      }}
+                      className="flex items-center gap-1 px-3 py-2 mb-1 ml-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Aggiungi nuova pagina vuota"
+                    >
+                      <Plus className="w-5 h-5" />
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -2516,284 +2844,291 @@ export default function App() {
             <div className={`min-h-[60vh] p-4 rounded-2xl bg-slate-100 dark:bg-slate-900/50 border-2 ${isLocked ? 'border-transparent' : 'border-dashed border-slate-200 dark:border-slate-700'} ${getActiveItems().length === 0 && currentBoard.type !== 'token' ? 'flex items-center justify-center' : ''}`}>
               {/* --- RENDERER TIMER VISIVO --- */}
               {currentBoard.type === 'timer' && (
-                <VisualTimer 
-                   settings={currentBoard.settings}
-                   onUpdateSettings={(key, val) => setCurrentBoard(prev => ({...prev, settings: {...prev.settings, [key]: val}}))}
-                   onSelectImage={() => { setEditingContext({type: 'timerImage'}); setShowSearch(true); }}
+                <VisualTimer
+                  settings={currentBoard.settings}
+                  customSounds={customSounds}
+                  onAddCustomSound={handleAddCustomSound}
+                  onUpdateSettings={(key: any, value: any) => {
+                    setCurrentBoard({
+                      ...currentBoard,
+                      settings: { ...currentBoard.settings, [key]: value }
+                    });
+                  }}
+                  onSelectImage={() => { setEditingContext({ type: 'timerImage' }); setShowSearch(true); }}
                 />
               )}
               {currentBoard.type === 'token' && (
                 <div className={`flex flex-col md:flex-row h-full gap-6 ${linkedSchedule ? 'justify-between' : 'justify-center'}`}>
                   {linkedSchedule && (
                     <div className="w-full md:w-1/3 bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col">
-                       <h3 className="font-bold text-slate-500 mb-3 flex items-center gap-2"><ListOrdered className="w-4 h-4"/> Agenda</h3>
-                       <div className="flex-1 overflow-y-auto space-y-3">
-                         {linkedSchedule.items && linkedSchedule.items.map(item => (
-                           <div key={item.id} onClick={() => toggleComplete(item.id)} className={`flex items-center p-2 rounded-lg border cursor-pointer transition-all ${item.completed ? 'bg-slate-100 opacity-60 grayscale' : 'bg-white dark:bg-slate-700'}`}>
-                             <div className={`p-1 rounded-full mr-3 ${item.completed ? 'text-green-600' : 'text-slate-300'}`}><CheckCircle2 className="w-6 h-6" /></div>
-                             <div className="w-12 h-12 mr-3 flex items-center justify-center">
-                               {item.iconId ? (() => { const IconComp = getIconComponent(item.iconId); const style = getPresetStyle(item.iconId); return <IconComp className={`w-8 h-8 ${style.icon}`} />; })() : item.imageUrl ? <img src={item.imageUrl} className="max-w-full max-h-full" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <ImageIcon className="text-slate-300"/>}
-                             </div>
-                             <span className={`font-bold ${item.completed ? 'line-through text-slate-400' : 'text-slate-800 dark:text-white'}`}>{item.label}</span>
-                           </div>
-                         ))}
-                       </div>
+                      <h3 className="font-bold text-slate-500 mb-3 flex items-center gap-2"><ListOrdered className="w-4 h-4" /> Agenda</h3>
+                      <div className="flex-1 overflow-y-auto space-y-3">
+                        {linkedSchedule.items && linkedSchedule.items.map(item => (
+                          <div key={item.id} onClick={() => toggleComplete(item.id)} className={`flex items-center p-2 rounded-lg border cursor-pointer transition-all ${item.completed ? 'bg-slate-100 opacity-60 grayscale' : 'bg-white dark:bg-slate-700'}`}>
+                            <div className={`p-1 rounded-full mr-3 ${item.completed ? 'text-green-600' : 'text-slate-300'}`}><CheckCircle2 className="w-6 h-6" /></div>
+                            <div className="w-12 h-12 mr-3 flex items-center justify-center">
+                              {item.iconId ? (() => { const IconComp = getIconComponent(item.iconId); const style = getPresetStyle(item.iconId); return <IconComp className={`w-8 h-8 ${style.icon}`} />; })() : item.imageUrl ? <img src={item.imageUrl} className="max-w-full max-h-full" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <ImageIcon className="text-slate-300" />}
+                            </div>
+                            <span className={`font-bold ${item.completed ? 'line-through text-slate-400' : 'text-slate-800 dark:text-white'}`}>{item.label}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                   <div className={`flex flex-col items-center justify-center space-y-8 ${linkedSchedule ? 'w-full md:w-2/3' : 'w-full max-w-2xl'}`}>
-                     <div className="flex flex-wrap justify-center gap-4">
-                       {Array.from({ length: currentBoard.settings.tokenCount }).map((_, idx) => {
-                         const isEarned = idx < (currentBoard.settings.earnedCount || 0);
-                         const tokenImg = currentBoard.settings.tokenImage;
-                         const isPreset = tokenImg?.iconId;
-                         const style = isPreset ? getPresetStyle(tokenImg.iconId) : { bg: 'bg-white dark:bg-slate-800', border: 'border-slate-300 dark:border-slate-600' };
-                         
-                         // Dynamic color for custom images
-                         const customStyle = !isPreset && isEarned && tokenImg?.dominantColor ? {
-                           backgroundColor: `rgba(${tokenImg.dominantColor.r}, ${tokenImg.dominantColor.g}, ${tokenImg.dominantColor.b}, 0.2)`,
-                           borderColor: `rgb(${tokenImg.dominantColor.r}, ${tokenImg.dominantColor.g}, ${tokenImg.dominantColor.b})`
-                         } : {};
+                    <div className="flex flex-wrap justify-center gap-4">
+                      {Array.from({ length: currentBoard.settings.tokenCount }).map((_, idx) => {
+                        const isEarned = idx < (currentBoard.settings.earnedCount || 0);
+                        const tokenImg = currentBoard.settings.tokenImage;
+                        const isPreset = tokenImg?.iconId;
+                        const style = isPreset ? getPresetStyle(tokenImg.iconId) : { bg: 'bg-white dark:bg-slate-800', border: 'border-slate-300 dark:border-slate-600' };
 
-                         return (
-                           <div key={idx} onClick={() => toggleToken(idx)} 
-                                style={customStyle}
-                                className={`w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 flex items-center justify-center cursor-pointer transition-all hover:scale-105 shadow-sm ${isEarned ? (isPreset ? `${style.bg} ${style.border}` : 'bg-amber-100 border-amber-400') : 'bg-white border-slate-300 dark:bg-slate-800 dark:border-slate-600'}`}>
-                              {isEarned && (
-                                tokenImg ? (
-                                  tokenImg.iconId ? (
-                                    (() => { const IconComp = getIconComponent(tokenImg.iconId); const iconStyle = getPresetStyle(tokenImg.iconId); return <IconComp className={`w-14 h-14 ${iconStyle.icon} animate-in zoom-in spin-in-12 duration-300`} />; })()
-                                  ) : (
-                                    <img src={tokenImg.imageUrl} className="w-14 h-14 object-contain animate-in zoom-in spin-in-12 duration-300" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                                  )
-                                ) : <Star className="w-12 h-12 text-amber-500 fill-amber-500 animate-in zoom-in duration-300" />
-                              )}
-                           </div>
-                         )
-                       })}
-                     </div>
-                     <ArrowDown className="w-10 h-10 text-slate-300 animate-bounce" />
-                     <div className={`w-64 aspect-square rounded-2xl border-4 flex flex-col items-center justify-center p-4 bg-white dark:bg-slate-800 shadow-xl transition-all ${(currentBoard.settings.earnedCount >= currentBoard.settings.tokenCount) ? 'border-green-500 ring-4 ring-green-200 scale-105' : 'border-slate-200 dark:border-slate-700'}`}>
-                        <div className="flex-1 w-full flex items-center justify-center overflow-hidden mb-2">
-                           {currentBoard.settings.rewardImage ? ( currentBoard.settings.rewardImage.iconId ? (() => { const IconComp = getIconComponent(currentBoard.settings.rewardImage.iconId); const style = getPresetStyle(currentBoard.settings.rewardImage.iconId); return <IconComp className={`w-24 h-24 ${style.icon}`} />; })() : <img src={currentBoard.settings.rewardImage.imageUrl} className="max-w-full max-h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> ) : <Trophy className="w-24 h-24 text-slate-200" />}
-                        </div>
-                        <span className="font-extrabold text-xl text-slate-700 dark:text-white uppercase">PREMIO</span>
-                     </div>
+                        // Dynamic color for custom images
+                        const customStyle = !isPreset && isEarned && tokenImg?.dominantColor ? {
+                          backgroundColor: `rgba(${tokenImg.dominantColor.r}, ${tokenImg.dominantColor.g}, ${tokenImg.dominantColor.b}, 0.2)`,
+                          borderColor: `rgb(${tokenImg.dominantColor.r}, ${tokenImg.dominantColor.g}, ${tokenImg.dominantColor.b})`
+                        } : {};
+
+                        return (
+                          <div key={idx} onClick={() => toggleToken(idx)}
+                            style={customStyle}
+                            className={`w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 flex items-center justify-center cursor-pointer transition-all hover:scale-105 shadow-sm ${isEarned ? (isPreset ? `${style.bg} ${style.border}` : 'bg-amber-100 border-amber-400') : 'bg-white border-slate-300 dark:bg-slate-800 dark:border-slate-600'}`}>
+                            {isEarned && (
+                              tokenImg ? (
+                                tokenImg.iconId ? (
+                                  (() => { const IconComp = getIconComponent(tokenImg.iconId); const iconStyle = getPresetStyle(tokenImg.iconId); return <IconComp className={`w-14 h-14 ${iconStyle.icon} animate-in zoom-in spin-in-12 duration-300`} />; })()
+                                ) : (
+                                  <img src={tokenImg.imageUrl} className="w-14 h-14 object-contain animate-in zoom-in spin-in-12 duration-300" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                                )
+                              ) : <Star className="w-12 h-12 text-amber-500 fill-amber-500 animate-in zoom-in duration-300" />
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <ArrowDown className="w-10 h-10 text-slate-300 animate-bounce" />
+                    <div className={`w-64 aspect-square rounded-2xl border-4 flex flex-col items-center justify-center p-4 bg-white dark:bg-slate-800 shadow-xl transition-all ${(currentBoard.settings.earnedCount >= currentBoard.settings.tokenCount) ? 'border-green-500 ring-4 ring-green-200 scale-105' : 'border-slate-200 dark:border-slate-700'}`}>
+                      <div className="flex-1 w-full flex items-center justify-center overflow-hidden mb-2">
+                        {currentBoard.settings.rewardImage ? (currentBoard.settings.rewardImage.iconId ? (() => { const IconComp = getIconComponent(currentBoard.settings.rewardImage.iconId); const style = getPresetStyle(currentBoard.settings.rewardImage.iconId); return <IconComp className={`w-24 h-24 ${style.icon}`} />; })() : <img src={currentBoard.settings.rewardImage.imageUrl} className="max-w-full max-h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />) : <Trophy className="w-24 h-24 text-slate-200" />}
+                      </div>
+                      <span className="font-extrabold text-xl text-slate-700 dark:text-white uppercase">PREMIO</span>
+                    </div>
                   </div>
                 </div>
               )}
               {/* --- RENDERER STORIE SOCIALI (Print Optimized) --- */}
               {currentBoard.type === 'story' && (
                 <div className="flex flex-col h-full relative pb-32">
-                   {/* Header Strumenti Storia (Visibile solo a schermo) */}
-                   <div className="print:hidden w-full bg-pink-50 dark:bg-pink-900/20 p-3 rounded-xl border border-pink-100 dark:border-pink-800 mb-4 flex flex-wrap gap-4 justify-between items-center">
-                      <div className="flex items-center gap-2 text-pink-800 dark:text-pink-200 text-sm font-bold">
-                        <BookOpen className="w-5 h-5"/>
-                        <span>Editor Storia</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {/* Selettore Orientamento Stampa */}
-                        <div className="flex bg-white dark:bg-slate-800 rounded-lg p-1 border border-pink-200 dark:border-pink-800">
-                           <button 
-                             onClick={() => updateTokenSettings('printOrientation', 'portrait')}
-                             className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-colors ${(!currentBoard.settings.printOrientation || currentBoard.settings.printOrientation === 'portrait') ? 'bg-pink-100 text-pink-700' : 'text-slate-400 hover:text-slate-600'}`}
-                           >
-                             <div className="w-3 h-4 border-2 border-current rounded-sm"></div> Vert.
-                           </button>
-                           <button 
-                             onClick={() => updateTokenSettings('printOrientation', 'landscape')}
-                             className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-colors ${(currentBoard.settings.printOrientation === 'landscape') ? 'bg-pink-100 text-pink-700' : 'text-slate-400 hover:text-slate-600'}`}
-                           >
-                             <div className="w-4 h-3 border-2 border-current rounded-sm"></div> Orizz.
-                           </button>
-                        </div>
-                        <button onClick={() => window.print()} className="bg-pink-600 hover:bg-pink-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-sm text-sm">
-                          <Printer className="w-4 h-4"/> Stampa
+                  {/* Header Strumenti Storia (Visibile solo a schermo) */}
+                  <div className="print:hidden w-full bg-pink-50 dark:bg-pink-900/20 p-3 rounded-xl border border-pink-100 dark:border-pink-800 mb-4 flex flex-wrap gap-4 justify-between items-center">
+                    <div className="flex items-center gap-2 text-pink-800 dark:text-pink-200 text-sm font-bold">
+                      <BookOpen className="w-5 h-5" />
+                      <span>Editor Storia</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {/* Selettore Orientamento Stampa */}
+                      <div className="flex bg-white dark:bg-slate-800 rounded-lg p-1 border border-pink-200 dark:border-pink-800">
+                        <button
+                          onClick={() => updateTokenSettings('printOrientation', 'portrait')}
+                          className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-colors ${(!currentBoard.settings.printOrientation || currentBoard.settings.printOrientation === 'portrait') ? 'bg-pink-100 text-pink-700' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          <div className="w-3 h-4 border-2 border-current rounded-sm"></div> Vert.
+                        </button>
+                        <button
+                          onClick={() => updateTokenSettings('printOrientation', 'landscape')}
+                          className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-colors ${(currentBoard.settings.printOrientation === 'landscape') ? 'bg-pink-100 text-pink-700' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          <div className="w-4 h-3 border-2 border-current rounded-sm"></div> Orizz.
                         </button>
                       </div>
-                   </div>
+                      <button onClick={() => window.print()} className="bg-pink-600 hover:bg-pink-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-sm text-sm">
+                        <Printer className="w-4 h-4" /> Stampa
+                      </button>
+                    </div>
+                  </div>
 
-                   {/* Area Contenuto Storia - AGGIUNTA CLASSE print-only-content */}
-                   <div className="story-print-container print-only-content flex-1 bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-y-auto min-h-[50vh]">
-                     {activeItems.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-50 print:hidden">
-                           <BookOpen className="w-16 h-16 mb-4"/>
-                           <p>Scrivi la tua storia nella barra in basso...</p>
-                        </div>
-                     ) : (
-                        <div className="flex flex-wrap items-end gap-x-4 gap-y-8 content-start">
-                          {activeItems.map((item, index) => (
-                            <div key={item.id} className="group relative flex flex-col items-center justify-end w-[3.5cm] break-inside-avoid">
-                              
-                              {/* Pulsante Unisci parole */}
-                              {!isLocked && index < activeItems.length - 1 && (
-                                <button 
-                                  onClick={async () => {
-                                    const nextItem = activeItems[index+1];
-                                    const newLabel = item.label + " " + nextItem.label;
-                                    removeItem(nextItem.id);
-                                    updateLabel(item.id, newLabel);
-                                    const result = await quickSearchArasaac(newLabel);
-                                    if (result.found) {
-                                      setCurrentBoard(prev => {
-                                        const copy = {...prev};
-                                        copy.items = copy.items.map(i => i.id === item.id ? {...i, imageUrl: result.imageUrl, sourceId: result.sourceId} : i);
-                                        return copy;
-                                      });
-                                    }
-                                  }}
-                                  className="absolute -right-5 top-1/2 -translate-y-1/2 z-20 bg-slate-100 border border-slate-300 hover:bg-blue-500 hover:text-white text-slate-400 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all shadow-sm print:hidden"
-                                >
-                                  <LinkIcon className="w-3 h-3"/>
-                                </button>
-                              )}
-                              
-                              {/* Immagine */}
-                              <div 
-                                 onClick={() => {
-                                    if (!isLocked) {
-                                      setEditingContext({type:'item', id: item.id, initialTerm: item.label}); 
-                                      setShowSearch(true);
-                                    }
-                                 }}
-                                 className={`w-full aspect-square border-2 ${!isLocked ? 'border-slate-100 hover:border-pink-400 cursor-pointer' : 'border-transparent'} rounded-xl overflow-hidden mb-1 bg-white relative shadow-sm print:border-none print:shadow-none`}
+                  {/* Area Contenuto Storia - AGGIUNTA CLASSE print-only-content */}
+                  <div className="story-print-container print-only-content flex-1 bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-y-auto min-h-[50vh]">
+                    {activeItems.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-50 print:hidden">
+                        <BookOpen className="w-16 h-16 mb-4" />
+                        <p>Scrivi la tua storia nella barra in basso...</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-end gap-x-4 gap-y-8 content-start">
+                        {activeItems.map((item, index) => (
+                          <div key={item.id} className="group relative flex flex-col items-center justify-end w-[3.5cm] break-inside-avoid">
+
+                            {/* Pulsante Unisci parole */}
+                            {!isLocked && index < activeItems.length - 1 && (
+                              <button
+                                onClick={async () => {
+                                  const nextItem = activeItems[index + 1];
+                                  const newLabel = item.label + " " + nextItem.label;
+                                  removeItem(nextItem.id);
+                                  updateLabel(item.id, newLabel);
+                                  const result = await quickSearchArasaac(newLabel);
+                                  if (result.found) {
+                                    setCurrentBoard(prev => {
+                                      const copy = { ...prev };
+                                      copy.items = copy.items.map(i => i.id === item.id ? { ...i, imageUrl: result.imageUrl, sourceId: result.sourceId } : i);
+                                      return copy;
+                                    });
+                                  }
+                                }}
+                                className="absolute -right-5 top-1/2 -translate-y-1/2 z-20 bg-slate-100 border border-slate-300 hover:bg-blue-500 hover:text-white text-slate-400 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all shadow-sm print:hidden"
                               >
-                                 {item.imageUrl ? (
-                                    <img src={item.imageUrl} className="w-full h-full object-contain p-1" />
-                                 ) : (
-                                    <div className="w-full h-full bg-slate-50 flex items-center justify-center text-slate-300 font-bold text-xs uppercase p-2 text-center break-words print:bg-transparent">
-                                      {item.label}
-                                    </div>
-                                 )}
-                                 {!isLocked && <div className="absolute top-0 right-0 p-1 opacity-0 group-hover:opacity-100 print:hidden"><button onClick={(e)=>{e.stopPropagation(); removeItem(item.id)}} className="bg-red-500 text-white rounded-full p-0.5"><X className="w-3 h-3"/></button></div>}
-                              </div>
+                                <LinkIcon className="w-3 h-3" />
+                              </button>
+                            )}
 
-                              {/* Testo Editabile (Input a schermo, Testo in stampa) */}
-                              {!isLocked ? (
-                                <input 
-                                  className="w-full text-center font-sans font-bold text-lg bg-transparent border-b-2 border-transparent focus:border-blue-500 outline-none transition-colors text-slate-800 dark:text-slate-200 print:hidden"
-                                  value={item.label}
-                                  onChange={(e) => updateLabel(item.id, e.target.value)}
-                                />
-                              ) : null}
-                              {/* Testo visibile SEMPRE in stampa o se bloccato */}
-                              <span className={`text-lg font-bold font-sans text-center leading-tight text-slate-800 dark:text-slate-200 ${!isLocked ? 'hidden print:block' : ''}`}>{item.label}</span>
-                            </div>
-                          ))}
-                        </div>
-                     )}
-                   </div>
-
-                   {/* Barra Input */}
-                   {!isLocked && (
-                      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-50 print:hidden">
-                         <div className="bg-white dark:bg-slate-900 p-2 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex gap-2 items-center ring-4 ring-pink-50 dark:ring-pink-900/20">
-                            <input 
-                              type="text" 
-                              placeholder="Scrivi qui la storia..." 
-                              className="flex-1 bg-transparent px-4 py-3 outline-none text-slate-800 dark:text-white text-lg placeholder:text-slate-400"
-                              onKeyDown={async (e) => {
-                                if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                                  const text = e.currentTarget.value;
-                                  e.currentTarget.value = ''; 
-                                  const words = text.split(' ').filter(w => w.trim());
-                                  setIsSaving(true);
-                                  const newItems = await Promise.all(words.map(async (word) => {
-                                    const search = await quickSearchArasaac(word);
-                                    return { id: crypto.randomUUID(), label: word, imageUrl: search.imageUrl, sourceId: search.sourceId, completed: false };
-                                  }));
-                                  setCurrentBoard(prev => ({ ...prev, items: [...(prev.items || []), ...newItems] }));
-                                  setIsSaving(false);
+                            {/* Immagine */}
+                            <div
+                              onClick={() => {
+                                if (!isLocked) {
+                                  setEditingContext({ type: 'item', id: item.id, initialTerm: item.label });
+                                  setShowSearch(true);
                                 }
                               }}
-                            />
-                            <div className="bg-pink-600 text-white p-3 rounded-xl"><ArrowRight className="w-6 h-6"/></div>
-                         </div>
+                              className={`w-full aspect-square border-2 ${!isLocked ? 'border-slate-100 hover:border-pink-400 cursor-pointer' : 'border-transparent'} rounded-xl overflow-hidden mb-1 bg-white relative shadow-sm print:border-none print:shadow-none`}
+                            >
+                              {item.imageUrl ? (
+                                <img src={item.imageUrl} className="w-full h-full object-contain p-1" />
+                              ) : (
+                                <div className="w-full h-full bg-slate-50 flex items-center justify-center text-slate-300 font-bold text-xs uppercase p-2 text-center break-words print:bg-transparent">
+                                  {item.label}
+                                </div>
+                              )}
+                              {!isLocked && <div className="absolute top-0 right-0 p-1 opacity-0 group-hover:opacity-100 print:hidden"><button onClick={(e) => { e.stopPropagation(); removeItem(item.id) }} className="bg-red-500 text-white rounded-full p-0.5"><X className="w-3 h-3" /></button></div>}
+                            </div>
+
+                            {/* Testo Editabile (Input a schermo, Testo in stampa) */}
+                            {!isLocked ? (
+                              <input
+                                className="w-full text-center font-sans font-bold text-lg bg-transparent border-b-2 border-transparent focus:border-blue-500 outline-none transition-colors text-slate-800 dark:text-slate-200 print:hidden"
+                                value={item.label}
+                                onChange={(e) => updateLabel(item.id, e.target.value)}
+                              />
+                            ) : null}
+                            {/* Testo visibile SEMPRE in stampa o se bloccato */}
+                            <span className={`text-lg font-bold font-sans text-center leading-tight text-slate-800 dark:text-slate-200 ${!isLocked ? 'hidden print:block' : ''}`}>{item.label}</span>
+                          </div>
+                        ))}
                       </div>
-                   )}
+                    )}
+                  </div>
+
+                  {/* Barra Input */}
+                  {!isLocked && (
+                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-50 print:hidden">
+                      <div className="bg-white dark:bg-slate-900 p-2 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex gap-2 items-center ring-4 ring-pink-50 dark:ring-pink-900/20">
+                        <input
+                          type="text"
+                          placeholder="Scrivi qui la storia..."
+                          className="flex-1 bg-transparent px-4 py-3 outline-none text-slate-800 dark:text-white text-lg placeholder:text-slate-400"
+                          onKeyDown={async (e) => {
+                            if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                              const text = e.currentTarget.value;
+                              e.currentTarget.value = '';
+                              const words = text.split(' ').filter(w => w.trim());
+                              setIsSaving(true);
+                              const newItems = await Promise.all(words.map(async (word) => {
+                                const search = await quickSearchArasaac(word);
+                                return { id: crypto.randomUUID(), label: word, imageUrl: search.imageUrl, sourceId: search.sourceId, completed: false };
+                              }));
+                              setCurrentBoard(prev => ({ ...prev, items: [...(prev.items || []), ...newItems] }));
+                              setIsSaving(false);
+                            }
+                          }}
+                        />
+                        <div className="bg-pink-600 text-white p-3 rounded-xl"><ArrowRight className="w-6 h-6" /></div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* --- RENDERER PECS GENERATOR (Grid Fissa & Sicura) --- */}
               {currentBoard.type === 'pecs' && (
                 <div className="flex flex-col items-center">
-                   <div className="print:hidden w-full max-w-4xl bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 mb-6 flex flex-wrap gap-4 items-center justify-between">
-                      <div className="flex gap-4 items-center">
-                        <div className="flex flex-col">
-                           <label className="text-[10px] uppercase font-bold text-indigo-400">Lato (cm)</label>
-                           <input type="number" step="0.5" value={currentBoard.settings.cardWidth} onChange={(e) => updateTokenSettings('cardWidth', parseFloat(e.target.value))} className="w-16 px-2 py-1 rounded border text-sm"/>
-                        </div>
-                        <div className="flex flex-col">
-                           <label className="text-[10px] uppercase font-bold text-indigo-400">Etichetta</label>
-                           <select value={currentBoard.settings.labelPosition} onChange={(e) => updateTokenSettings('labelPosition', e.target.value)} className="px-2 py-1 rounded border text-sm">
-                             <option value="bottom">Sotto</option>
-                             <option value="top">Sopra</option>
-                           </select>
-                        </div>
+                  <div className="print:hidden w-full max-w-4xl bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 mb-6 flex flex-wrap gap-4 items-center justify-between">
+                    <div className="flex gap-4 items-center">
+                      <div className="flex flex-col">
+                        <label className="text-[10px] uppercase font-bold text-indigo-400">Lato (cm)</label>
+                        <input type="number" step="0.5" value={currentBoard.settings.cardWidth} onChange={(e) => updateTokenSettings('cardWidth', parseFloat(e.target.value))} className="w-16 px-2 py-1 rounded border text-sm" />
                       </div>
-                      <button onClick={() => window.print()} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-md"><Printer className="w-4 h-4"/> Stampa / PDF</button>
-                   </div>
-
-                   {/* Foglio A4 Simulato - AGGIUNTA CLASSE print-only-content */}
-                   <div className="print-only-content bg-white shadow-2xl print:shadow-none w-[21cm] h-[29.7cm] print:w-full print:h-full mx-auto relative bg-white border box-border print:border-none">
-                      {/* Grid Container */}
-                      <div className="w-full h-full flex flex-wrap content-start">
-                        {(() => {
-                           // USARE 29.0cm INVECE DI 29.7cm PER EVITARE IL TAGLIO
-                           const SAFE_PRINTABLE_HEIGHT = 29.0; 
-                           
-                           const size = currentBoard.settings.cardWidth; // cm
-                           const cols = Math.floor(21 / size);
-                           const rows = Math.floor(SAFE_PRINTABLE_HEIGHT / size);
-                           const totalCells = cols * rows;
-                           
-                           const displayItems = [...activeItems];
-                           while (displayItems.length < totalCells) {
-                             displayItems.push({ id: `ghost-${displayItems.length}`, isGhost: true });
-                           }
-
-                           return displayItems.slice(0, totalCells).map((item, idx) => (
-                             <div 
-                               key={item.id}
-                               className="relative box-border flex items-center justify-center overflow-hidden"
-                               style={{
-                                 width: `${size}cm`,
-                                 height: `${size}cm`,
-                                 borderRight: '1px solid black',
-                                 borderBottom: '1px solid black',
-                                 borderTop: idx < cols ? '1px solid black' : 'none', 
-                                 borderLeft: (idx % cols) === 0 ? '1px solid black' : 'none' 
-                               }}
-                             >
-                               {!item.isGhost ? (
-                                 <div className="w-full h-full p-1 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 print:hover:bg-transparent" onClick={() => !isLocked && setEditingContext({type:'item', id: item.id, initialTerm: item.label}) & setShowSearch(true)}>
-                                    {currentBoard.settings.labelPosition === 'top' && <span className="text-[10px] font-bold uppercase text-center w-full truncate mb-0.5 leading-none font-sans text-black">{item.label}</span>}
-                                    <div className="flex-1 w-full flex items-center justify-center overflow-hidden">
-                                      {item.imageUrl ? <img src={item.imageUrl} className="w-full h-full object-contain" /> : item.iconId ? (() => { const IconComp = getIconComponent(item.iconId); return <IconComp className="w-4/5 h-4/5 text-black" />; })() : null}
-                                    </div>
-                                    {currentBoard.settings.labelPosition === 'bottom' && <span className="text-[10px] font-bold uppercase text-center w-full truncate mt-0.5 leading-none font-sans text-black">{item.label}</span>}
-                                    {!isLocked && <button onClick={(e) => {e.stopPropagation(); removeItem(item.id)}} className="absolute top-0.5 right-0.5 z-10 text-red-500 hover:text-red-700 print:hidden"><X className="w-3 h-3"/></button>}
-                                 </div>
-                               ) : (
-                                 !isLocked ? (
-                                   <div onClick={() => { setEditingContext(null); setShowSearch(true); }} className="w-full h-full flex items-center justify-center opacity-0 hover:opacity-100 cursor-pointer text-indigo-300 hover:bg-indigo-50 transition-all print:hidden">
-                                      <Plus className="w-6 h-6"/>
-                                   </div>
-                                 ) : null
-                               )}
-                             </div>
-                           ));
-                        })()}
+                      <div className="flex flex-col">
+                        <label className="text-[10px] uppercase font-bold text-indigo-400">Etichetta</label>
+                        <select value={currentBoard.settings.labelPosition} onChange={(e) => updateTokenSettings('labelPosition', e.target.value)} className="px-2 py-1 rounded border text-sm">
+                          <option value="bottom">Sotto</option>
+                          <option value="top">Sopra</option>
+                        </select>
                       </div>
-                   </div>
+                    </div>
+                    <button onClick={() => window.print()} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-md"><Printer className="w-4 h-4" /> Stampa / PDF</button>
+                  </div>
+
+                  {/* Foglio A4 Simulato - AGGIUNTA CLASSE print-only-content */}
+                  <div className="print-only-content bg-white shadow-2xl print:shadow-none w-[21cm] h-[29.7cm] print:w-full print:h-full mx-auto relative bg-white border box-border print:border-none">
+                    {/* Grid Container */}
+                    <div className="w-full h-full flex flex-wrap content-start">
+                      {(() => {
+                        // USARE 29.0cm INVECE DI 29.7cm PER EVITARE IL TAGLIO
+                        const SAFE_PRINTABLE_HEIGHT = 29.0;
+
+                        const size = currentBoard.settings.cardWidth; // cm
+                        const cols = Math.floor(21 / size);
+                        const rows = Math.floor(SAFE_PRINTABLE_HEIGHT / size);
+                        const totalCells = cols * rows;
+
+                        const displayItems = [...activeItems];
+                        while (displayItems.length < totalCells) {
+                          displayItems.push({ id: `ghost-${displayItems.length}`, isGhost: true });
+                        }
+
+                        return displayItems.slice(0, totalCells).map((item, idx) => (
+                          <div
+                            key={item.id}
+                            className="relative box-border flex items-center justify-center overflow-hidden"
+                            style={{
+                              width: `${size}cm`,
+                              height: `${size}cm`,
+                              borderRight: '1px solid black',
+                              borderBottom: '1px solid black',
+                              borderTop: idx < cols ? '1px solid black' : 'none',
+                              borderLeft: (idx % cols) === 0 ? '1px solid black' : 'none'
+                            }}
+                          >
+                            {!item.isGhost ? (
+                              <div className="w-full h-full p-1 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 print:hover:bg-transparent" onClick={() => !isLocked && setEditingContext({ type: 'item', id: item.id, initialTerm: item.label }) & setShowSearch(true)}>
+                                {currentBoard.settings.labelPosition === 'top' && <span className="text-[10px] font-bold uppercase text-center w-full truncate mb-0.5 leading-none font-sans text-black">{item.label}</span>}
+                                <div className="flex-1 w-full flex items-center justify-center overflow-hidden">
+                                  {item.imageUrl ? <img src={item.imageUrl} className="w-full h-full object-contain" /> : item.iconId ? (() => { const IconComp = getIconComponent(item.iconId); return <IconComp className="w-4/5 h-4/5 text-black" />; })() : null}
+                                </div>
+                                {currentBoard.settings.labelPosition === 'bottom' && <span className="text-[10px] font-bold uppercase text-center w-full truncate mt-0.5 leading-none font-sans text-black">{item.label}</span>}
+                                {!isLocked && <button onClick={(e) => { e.stopPropagation(); removeItem(item.id) }} className="absolute top-0.5 right-0.5 z-10 text-red-500 hover:text-red-700 print:hidden"><X className="w-3 h-3" /></button>}
+                              </div>
+                            ) : (
+                              !isLocked ? (
+                                <div onClick={() => { setEditingContext(null); setShowSearch(true); }} className="w-full h-full flex items-center justify-center opacity-0 hover:opacity-100 cursor-pointer text-indigo-300 hover:bg-indigo-50 transition-all print:hidden">
+                                  <Plus className="w-6 h-6" />
+                                </div>
+                              ) : null
+                            )}
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  </div>
                 </div>
               )}
               {/* Messaggio "Vuoto" (NASCOSTO PER IL TIMER) */}
-{currentBoard.type !== 'token' && currentBoard.type !== 'story' && currentBoard.type !== 'pecs' && currentBoard.type !== 'timer' && activeItems.length === 0 && (
-  <div className="text-center text-slate-400">
-    <div className="bg-white dark:bg-slate-800 p-4 rounded-full inline-block mb-3 shadow-sm"><ImageIcon className="w-8 h-8 opacity-50" /></div>
-    <p>{isLocked ? "Nessun elemento." : "Clicca \"Aggiungi\" per iniziare."}</p>
-  </div>
-)}
+              {currentBoard.type !== 'token' && currentBoard.type !== 'story' && currentBoard.type !== 'pecs' && currentBoard.type !== 'timer' && activeItems.length === 0 && (
+                <div className="text-center text-slate-400">
+                  <div className="bg-white dark:bg-slate-800 p-4 rounded-full inline-block mb-3 shadow-sm"><ImageIcon className="w-8 h-8 opacity-50" /></div>
+                  <p>{isLocked ? "Nessun elemento." : "Clicca \"Aggiungi\" per iniziare."}</p>
+                </div>
+              )}
 
               {/* Render Standard per Grid e Sequence */}
               {(currentBoard.type === 'grid' || currentBoard.type === 'sequence') && (
@@ -2805,7 +3140,7 @@ export default function App() {
                         draggable={!isLocked}
                         onDragStart={(e) => handleDragStart(e, index)}
                         // USARE IL NUOVO GESTORE
-                        onDragOver={(e) => handleDragOver(e, index)} 
+                        onDragOver={(e) => handleDragOver(e, index)}
                         onDragEnd={handleDragEnd}
                         className={`relative ${!isLocked ? 'cursor-grab active:cursor-grabbing hover:scale-[1.02] transition-transform' : ''}`}
                       >
@@ -2813,20 +3148,20 @@ export default function App() {
                         {!isLocked && dropIndicator.index === index && (
                           <div className={`absolute z-50 bg-blue-500 rounded-full shadow-md pointer-events-none
                             ${dropIndicator.position === 'before' ? '-left-3' : '-right-3'}
-                            top-0 bottom-0 w-1.5 h-full`} 
+                            top-0 bottom-0 w-1.5 h-full`}
                           />
                         )}
                         {/* ----------------------------------- */}
-                        
-                        <PictogramCard 
-                          item={item} 
-                          mode="grid" 
-                          isLocked={isLocked} 
+
+                        <PictogramCard
+                          item={item}
+                          mode="grid"
+                          isLocked={isLocked}
                           isActive={activeItemId === item.id}
                           onClick={handleChildClick}
-                          onRemove={removeItem} 
-                          onReplaceImage={(id) => { setEditingContext({type:'item', id}); setShowSearch(true); }} 
-                          onEditLabel={updateLabel} 
+                          onRemove={removeItem}
+                          onReplaceImage={(id) => { setEditingContext({ type: 'item', id }); setShowSearch(true); }}
+                          onEditLabel={updateLabel}
                         />
                       </div>
                     ))}
@@ -2834,38 +3169,38 @@ export default function App() {
                 ) : (
                   <div className={`${currentBoard.settings?.orientation === 'vertical' ? 'flex flex-col gap-4 w-full max-w-md mx-auto' : 'flex gap-4 overflow-x-auto pb-6 pt-2 snap-x px-2 h-full items-center w-full'}`}>
                     {activeItems.map((item, index) => (
-                      <div 
-                        key={item.id} 
-                        draggable={!isLocked} 
-                        onDragStart={(e) => handleDragStart(e, index)} 
-                        onDragOver={(e) => handleDragOver(e, index)} 
-                        onDragEnd={handleDragEnd} 
+                      <div
+                        key={item.id}
+                        draggable={!isLocked}
+                        onDragStart={(e) => handleDragStart(e, index)}
+                        onDragOver={(e) => handleDragOver(e, index)}
+                        onDragEnd={handleDragEnd}
                         className={`relative ${currentBoard.settings?.orientation === 'vertical' ? 'w-full' : 'snap-center'}`}
                       >
-                         {/* --- INDICATORE LINEA BLU (SEQUENCE) --- */}
-                         {!isLocked && dropIndicator.index === index && (
-                           <div className={`absolute z-50 bg-blue-500 rounded-full shadow-md pointer-events-none
-                             ${currentBoard.settings?.orientation === 'vertical' 
-                                ? (dropIndicator.position === 'before' ? '-top-3 left-0 right-0 h-1.5 w-full' : '-bottom-3 left-0 right-0 h-1.5 w-full') // Orizzontale per lista vert.
-                                : (dropIndicator.position === 'before' ? '-left-3 top-0 bottom-0 w-1.5 h-full' : '-right-3 top-0 bottom-0 w-1.5 h-full') // Verticale per lista orizz.
-                             }`} 
-                           />
-                         )}
-                         {/* --------------------------------------- */}
+                        {/* --- INDICATORE LINEA BLU (SEQUENCE) --- */}
+                        {!isLocked && dropIndicator.index === index && (
+                          <div className={`absolute z-50 bg-blue-500 rounded-full shadow-md pointer-events-none
+                             ${currentBoard.settings?.orientation === 'vertical'
+                              ? (dropIndicator.position === 'before' ? '-top-3 left-0 right-0 h-1.5 w-full' : '-bottom-3 left-0 right-0 h-1.5 w-full') // Orizzontale per lista vert.
+                              : (dropIndicator.position === 'before' ? '-left-3 top-0 bottom-0 w-1.5 h-full' : '-right-3 top-0 bottom-0 w-1.5 h-full') // Verticale per lista orizz.
+                            }`}
+                          />
+                        )}
+                        {/* --------------------------------------- */}
 
-                        <PictogramCard 
-                           item={item} 
-                           mode="sequence" 
-                           orientation={currentBoard.settings?.orientation} 
-                           isLocked={isLocked} 
-                           isActive={activeItemId === item.id}
-                           onClick={handleChildClick}
-                           onRemove={removeItem} 
-                           onReplaceImage={(id) => { setEditingContext({type:'item', id}); setShowSearch(true); }} 
-                           onEditLabel={updateLabel} 
-                           onToggleComplete={toggleComplete} 
+                        <PictogramCard
+                          item={item}
+                          mode="sequence"
+                          orientation={currentBoard.settings?.orientation}
+                          isLocked={isLocked}
+                          isActive={activeItemId === item.id}
+                          onClick={handleChildClick}
+                          onRemove={removeItem}
+                          onReplaceImage={(id) => { setEditingContext({ type: 'item', id }); setShowSearch(true); }}
+                          onEditLabel={updateLabel}
+                          onToggleComplete={toggleComplete}
                         />
-                        {index < activeItems.length - 1 && <div className="flex justify-center p-2 text-slate-300">{currentBoard.settings?.orientation === 'vertical' ? <ArrowDown className="w-6 h-6"/> : <ArrowRight className="w-6 h-6"/>}</div>}
+                        {index < activeItems.length - 1 && <div className="flex justify-center p-2 text-slate-300">{currentBoard.settings?.orientation === 'vertical' ? <ArrowDown className="w-6 h-6" /> : <ArrowRight className="w-6 h-6" />}</div>}
                       </div>
                     ))}
                   </div>
@@ -2876,15 +3211,16 @@ export default function App() {
           </div>
         )}
       </main>
-      <SearchModal 
-         isOpen={showSearch} 
-         onClose={() => { setShowSearch(false); setEditingContext(null); }} 
-         onSelect={handleSearchSelect} 
-         initialQuery={editingContext?.initialTerm}
-         boards={boards} // <--- AGGIUNTO QUI: Passiamo la lista progetti al modale
+      <SearchModal
+        isOpen={showSearch}
+        onClose={() => { setShowSearch(false); setEditingContext(null); }}
+        onSelect={handleSearchSelect}
+        initialQuery={editingContext?.initialTerm}
+        boards={boards} // <--- AGGIUNTO QUI: Passiamo la lista progetti al modale
       />
-        {/* AGGIUNGI QUESTO: */}
+      {/* AGGIUNGI QUESTO: */}
       <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
+      <SyncBackupModal isOpen={showSyncModal} onClose={() => setShowSyncModal(false)} boards={boards} onRefresh={loadBoards} />
 
     </div>
   );
