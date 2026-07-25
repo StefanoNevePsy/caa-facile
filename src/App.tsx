@@ -16,6 +16,7 @@ import {
 import Cropper from 'react-easy-crop';
 import SyncBackupModal from './SyncBackupModal';
 import StoryWriter from './StoryWriter';
+import { DiscoTimer, ClessidraTimer, BatteriaTimer, RazzoTimer, TortaTimer, type TimerTheme } from './TimerThemes';
 import { urlImmagineArasaac, type SimboloRisolto } from './lib/symbolizer';
 import { App as CapApp } from '@capacitor/app';
 import type { PluginListenerHandle } from '@capacitor/core';
@@ -108,6 +109,19 @@ const TIMER_PRESETS = [
   { label: '10 min', seconds: 600 },
   { label: '15 min', seconds: 900 },
   { label: '30 min', seconds: 1800 },
+];
+
+// I temi del timer visivo. Bambini diversi leggono il tempo in modi diversi:
+// il disco mostra una quantità che cala, la sabbia un travaso, razzo e batteria
+// un traguardo che si avvicina. Poterlo cambiare è parte dello strumento.
+const TIMER_THEMES: Array<{ id: TimerTheme; label: string; nota: string }> = [
+  { id: 'disc', label: 'Disco (Time Timer)', nota: 'Il settore colorato si riduce girando' },
+  { id: 'liquid', label: 'Boccia liquida', nota: 'Il livello si abbassa scoprendo l\'immagine' },
+  { id: 'sand', label: 'Clessidra', nota: 'La sabbia scende da un\'ampolla all\'altra' },
+  { id: 'mouse', label: 'Topolino e formaggio', nota: 'Il topo mangia il percorso' },
+  { id: 'battery', label: 'Batteria', nota: 'La carica cala a tacche' },
+  { id: 'rocket', label: 'Razzo', nota: 'Sale verso il premio' },
+  { id: 'cake', label: 'Torta', nota: 'Le fette spariscono una alla volta' },
 ];
 
 const TIMER_SOUNDS = [
@@ -1697,19 +1711,23 @@ const TimeInput = ({ value, onChange, onFocus, onBlur, label, type, onArrowClick
 // --- ICONE E COMPONENTI SET TIMER MOUSE ---
 const CheeseWedge = ({ isEaten, isEating }: { isEaten: boolean, isEating: boolean }) => {
   if (isEaten) {
+    // Restano le briciole: il pezzo mangiato lascia una traccia del percorso
+    // già fatto, invece di svanire e basta.
     return (
-      <svg viewBox="0 0 100 100" className="w-1/2 h-1/2 opacity-30 drop-shadow-none">
-        <circle cx="30" cy="30" r="8" fill="#D1D5DB" />
-        <circle cx="70" cy="60" r="5" fill="#D1D5DB" />
-        <circle cx="40" cy="80" r="6" fill="#D1D5DB" />
+      <svg viewBox="0 0 100 100" className="w-1/2 h-1/2 opacity-40">
+        <circle cx="34" cy="42" r="6" fill="#D97706" opacity="0.45" />
+        <circle cx="62" cy="58" r="4" fill="#D97706" opacity="0.35" />
+        <circle cx="46" cy="70" r="5" fill="#D97706" opacity="0.4" />
       </svg>
     );
   }
   return (
     <svg
       viewBox="0 0 100 100"
-      className={`w-full h-full p-1 md:p-2 transition-all duration-300 ${isEating ? 'scale-90 animate-pulse drop-shadow-none -rotate-3' : 'scale-100 hover:scale-105 drop-shadow-md'}`}
+      className={`w-full h-full p-1 md:p-2 transition-all duration-500 ${isEating ? 'scale-[0.82] -rotate-6 opacity-80 drop-shadow-none' : 'scale-100 drop-shadow-md'}`}
     >
+      {/* Morso in corso: un boccone visibile sul bordo */}
+      {isEating && <circle cx="88" cy="42" r="14" fill="#fff" className="dark:fill-slate-800" />}
       <path d="M15 80 L85 80 Q95 80 95 70 L75 25 Q70 15 60 15 L20 25 Q10 25 10 35 Z" fill="#FBBF24" />
       <path d="M15 80 L85 80 Q95 80 95 70 L75 25 Q70 15 60 15 L20 25 Q10 25 10 35 Z" fill="none" stroke="#D97706" strokeWidth="4" />
       <circle cx="35" cy="50" r="8" fill="#D97706" opacity="0.6" />
@@ -1725,8 +1743,8 @@ const MouseCharacter = ({ isActive, facesLeft, isFinished }: { isActive: boolean
     return <div className="text-4xl md:text-6xl animate-bounce leading-none mt-2">🐭🎉</div>;
   }
   return (
-    <div className={`w-12 h-12 md:w-16 md:h-16 drop-shadow-xl transition-transform duration-700 ease-in-out origin-center ${facesLeft ? 'scale-x-[-1]' : 'scale-x-100'} ${isActive ? 'animate-bounce' : ''}`}>
-      <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
+    <div className={`w-12 h-12 md:w-16 md:h-16 drop-shadow-xl transition-transform duration-500 origin-center ${facesLeft ? 'scale-x-[-1]' : 'scale-x-100'}`}>
+      <svg viewBox="0 0 100 100" className={`w-full h-full overflow-visible ${isActive ? 'topo-mastica' : ''}`}>
         <path d="M 20 70 Q -10 90 0 40" fill="none" stroke="#FCA5A5" strokeWidth="5" strokeLinecap="round" className={isActive ? 'animate-pulse' : ''} />
         <ellipse cx="45" cy="70" rx="30" ry="20" fill="#9CA3AF" />
         <circle cx="70" cy="45" r="14" fill="#6B7280" />
@@ -1862,6 +1880,36 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
   const percentage = Math.min(100, (timeLeft / (settings.duration || 1)) * 100);
   const currentColor = getProgressColorHex(percentage);
 
+  // Tema attivo, con ricaduta sulla boccia liquida per i progetti salvati
+  // prima che i temi aggiuntivi esistessero.
+  const temaCorrente: TimerTheme = TIMER_THEMES.some((t) => t.id === settings.timerStyle)
+    ? (settings.timerStyle as TimerTheme)
+    : 'liquid';
+
+  const isFinished = timeLeft === 0 && (!isActive || settings.duration > 0);
+
+  const immagineTema = settings.timerImage
+    ? settings.timerImage.imageUrl
+      ? <img src={settings.timerImage.imageUrl} alt="" className="w-full h-full object-contain" />
+      : settings.timerImage.iconId
+        ? (() => {
+            const IconComp = getIconComponent(settings.timerImage.iconId);
+            const style = getPresetStyle(settings.timerImage.iconId);
+            return <IconComp className={`w-full h-full ${style.icon}`} />;
+          })()
+        : null
+    : null;
+
+  const propsTema = {
+    percentuale: percentage,
+    timeLeft,
+    isActive,
+    isFinished,
+    colore: currentColor,
+    immagine: immagineTema,
+    onSelectImage,
+  };
+
   return (
     <div className="flex flex-col items-center w-full max-w-4xl mx-auto p-0 animate-in fade-in">
       <audio ref={audioRef} preload="auto" />
@@ -1871,14 +1919,19 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
 
         <div className="flex flex-wrap justify-between items-start gap-2">
 
-          {/* STILE DEL TIMER (Nuovo Selettore) */}
-          <div className="flex bg-slate-100 dark:bg-slate-900 rounded-xl p-1 shrink-0">
-            <button onClick={() => onUpdateSettings('timerStyle', 'liquid')} aria-label="Stile boccia liquida" aria-pressed={settings.timerStyle !== 'mouse'} className={`p-3 min-h-touch min-w-touch flex items-center justify-center rounded-lg transition-all ${settings.timerStyle !== 'mouse' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`} title="Boccia Liquida">
-              <Timer className="w-5 h-5" />
-            </button>
-            <button onClick={() => onUpdateSettings('timerStyle', 'mouse')} aria-label="Stile topolino e formaggio" aria-pressed={settings.timerStyle === 'mouse'} className={`p-3 min-h-touch min-w-touch flex items-center justify-center rounded-lg transition-all ${settings.timerStyle === 'mouse' ? 'bg-white dark:bg-slate-700 shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`} title="Topolino e Formaggio">
-              <Mouse className="w-5 h-5" />
-            </button>
+          {/* STILE DEL TIMER */}
+          <div className="flex flex-col gap-1 shrink-0">
+            <label htmlFor="timer-tema" className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Tema</label>
+            <select
+              id="timer-tema"
+              value={temaCorrente}
+              onChange={(e) => onUpdateSettings('timerStyle', e.target.value)}
+              className="px-3 py-2 min-h-touch rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white font-bold text-sm max-w-[13rem]"
+            >
+              {TIMER_THEMES.map((t) => (
+                <option key={t.id} value={t.id}>{t.label}</option>
+              ))}
+            </select>
           </div>
 
           {/* BOX SINISTRA: Input Tempo e Play */}
@@ -1965,10 +2018,9 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
 
       {/* RENDER STILE TIMER */}
       {/* RENDER STILE TIMER */}
-      {settings.timerStyle === 'mouse' ? (() => {
+      {temaCorrente === 'mouse' ? (() => {
         const totalCheese = 20;
         const cols = 5;
-        const isFinished = timeLeft === 0 && (!isActive || settings.duration > 0);
         const progressNorm = isFinished ? 1 : 1 - (timeLeft / Math.max(1, settings.duration));
         const currentIdx = Math.min(totalCheese - 1, Math.floor(progressNorm * totalCheese));
 
@@ -2004,6 +2056,16 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
                   <div className="text-center text-slate-300 dark:text-slate-600"><ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50" /><span className="text-xs font-bold uppercase tracking-widest text-center">Tocca img finale</span></div>
                 )}
               </div>
+
+              {/* Percorso: mostra dove andrà il topo. Prima l'ordine a
+                  serpentina era invisibile e i salti sembravano casuali. */}
+              <svg className="absolute inset-0 z-[5] w-full h-full pointer-events-none" viewBox="0 0 100 80" preserveAspectRatio="none" aria-hidden="true">
+                <path
+                  d="M 10 10 H 90 M 90 10 V 30 M 90 30 H 10 M 10 30 V 50 M 10 50 H 90 M 90 50 V 70 M 90 70 H 10"
+                  fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 3"
+                  className="text-amber-300 dark:text-slate-600"
+                />
+              </svg>
 
               {/* Grid Layer */}
               <div className="absolute inset-0 z-10 grid grid-cols-5 grid-rows-4 p-1 md:p-2 gap-1 md:gap-2">
@@ -2051,8 +2113,8 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
             )}
           </div>
         );
-      })() : (
-        /* BOCCIA LIQUIDA RIDOTTA (w-56 mobile / w-96 desktop) */
+      })() : temaCorrente === 'liquid' ? (
+        /* BOCCIA LIQUIDA */
         <div
           className="relative mt-4 w-56 h-56 md:w-96 md:h-96 rounded-full border-[10px] md:border-[12px] border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden flex items-center justify-center transition-all duration-700 bg-white dark:bg-slate-900 mx-auto"
           style={{ backgroundColor: getBackgroundColor() }}
@@ -2067,16 +2129,40 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
             )}
           </div>
 
-          {/* 2. Liquido e Onde SVG (Doppio ciclo per loop perfetto) */}
+          {/* 2. Liquido e onde SVG (doppio ciclo per un loop continuo) */}
           <div className="liquid-container" style={{ height: `${percentage}%`, backgroundColor: currentColor }}>
-            {percentage > 0.5 && percentage < 99.5 && (
-              <div className="wave-wrapper" style={{ color: currentColor, marginBottom: '-1px' }}>
+            {/* Le onde restano sempre: prima sparivano di colpo vicino agli
+                estremi, e il livello sembrava saltare. Vicino al pieno e al
+                vuoto si appiattiscono invece di scomparire. */}
+            {percentage > 0.2 && (
+              <div
+                className="wave-wrapper"
+                style={{
+                  color: currentColor,
+                  marginBottom: '-1px',
+                  transform: `scaleY(${Math.max(0.15, Math.min(1, percentage / 12, (100 - percentage) / 12))})`,
+                  transformOrigin: 'bottom',
+                }}
+              >
+                <svg className="wave-svg wave-deep" viewBox="0 0 2000 100" preserveAspectRatio="none">
+                  <path d="M 0 100 V 55 Q 200 25 400 55 T 800 55 T 1200 55 T 1600 55 T 2000 55 V 100 H 0 Z" fill="currentColor" />
+                </svg>
                 <svg className="wave-svg wave-back" viewBox="0 0 2000 100" preserveAspectRatio="none">
                   <path d="M 0 100 V 50 Q 250 10 500 50 T 1000 50 T 1500 50 T 2000 50 V 100 H 0 Z" fill="currentColor" />
                 </svg>
                 <svg className="wave-svg wave-front" viewBox="0 0 2000 100" preserveAspectRatio="none">
                   <path d="M 0 100 V 50 Q 250 10 500 50 T 1000 50 T 1500 50 T 2000 50 V 100 H 0 Z" fill="currentColor" />
                 </svg>
+              </div>
+            )}
+
+            {/* Bollicine: segnalano che il tempo sta scorrendo anche quando il
+                livello si muove troppo lentamente per accorgersene. */}
+            {isActive && percentage > 6 && (
+              <div className="bolle" aria-hidden="true">
+                {[12, 34, 56, 74, 88].map((sinistra, i) => (
+                  <span key={sinistra} className="bolla" style={{ left: `${sinistra}%`, animationDelay: `${i * 1.1}s`, animationDuration: `${4 + (i % 3)}s` }} />
+                ))}
               </div>
             )}
           </div>
@@ -2088,6 +2174,26 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
             </div>
           )}
         </div>
+      ) : temaCorrente === 'disc' ? (
+        <DiscoTimer {...propsTema} />
+      ) : temaCorrente === 'sand' ? (
+        <ClessidraTimer {...propsTema} />
+      ) : temaCorrente === 'battery' ? (
+        <BatteriaTimer {...propsTema} />
+      ) : temaCorrente === 'rocket' ? (
+        <RazzoTimer {...propsTema} />
+      ) : (
+        <TortaTimer {...propsTema} />
+      )}
+
+      {/* Avvio: i temi senza sovrapposizione propria hanno bisogno di un comando */}
+      {temaCorrente !== 'mouse' && !isActive && !isFinished && timeLeft > 0 && (
+        <button
+          onClick={toggleTimer}
+          className="mt-4 flex items-center gap-2 px-6 py-3 min-h-touch rounded-full bg-green-600 text-white font-bold shadow-lg hover:bg-green-700 active:scale-95 transition-all"
+        >
+          <Play className="w-5 h-5 fill-current" /> Avvia
+        </button>
       )}
     </div>
   );
@@ -2893,6 +2999,48 @@ export default function App() {
         animation: wave-front 4s linear infinite;
         opacity: 1;
       }
+
+      /* Terza onda, più lenta e profonda: dà spessore al liquido. */
+      .wave-deep {
+        animation: wave-back 11s linear infinite;
+        opacity: 0.35;
+        transform: scaleY(1.15);
+      }
+
+      /* Masticazione: un dondolio breve, meno invadente del rimbalzo continuo. */
+      @keyframes mastica {
+        0%, 100% { transform: translateY(0) rotate(0deg); }
+        30%      { transform: translateY(-2px) rotate(-4deg); }
+        60%      { transform: translateY(1px) rotate(3deg); }
+      }
+      .topo-mastica {
+        animation: mastica 0.9s ease-in-out infinite;
+      }
+
+      /* --- BOLLICINE --- */
+      .bolle {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .bolla {
+        position: absolute;
+        bottom: -12%;
+        width: 8px;
+        height: 8px;
+        border-radius: 9999px;
+        background: rgba(255, 255, 255, 0.45);
+        animation-name: sali;
+        animation-timing-function: ease-in;
+        animation-iteration-count: infinite;
+      }
+      @keyframes sali {
+        0%   { transform: translateY(0) scale(0.6); opacity: 0; }
+        15%  { opacity: 0.7; }
+        85%  { opacity: 0.5; }
+        100% { transform: translateY(-320px) scale(1.1); opacity: 0; }
+      }
     `;
     document.head.appendChild(style);
     return () => {
@@ -3112,8 +3260,9 @@ export default function App() {
                     {(currentBoard.type === 'grid' || currentBoard.type === 'sequence' || currentBoard.type === 'story') && (
                       <VoiceControls enabled={voiceEnabled} onToggle={() => setVoiceEnabled((v) => !v)} />
                     )}
-                    {/* Nelle storie non serve: i simboli nascono dal testo scritto. */}
-                    {currentBoard.type !== 'token' && currentBoard.type !== 'story' && (
+                    {/* Non serve nelle storie (i simboli nascono dal testo) né nei
+                        timer (l'immagine si sceglie toccando il timer stesso). */}
+                    {currentBoard.type !== 'token' && currentBoard.type !== 'story' && currentBoard.type !== 'timer' && (
                       <button onClick={() => { setEditingContext(null); setShowSearch(true); }} className="bg-slate-900 dark:bg-blue-600 text-white px-5 py-3 min-h-touch rounded-xl font-bold shadow-lg hover:scale-105 transition-transform flex items-center justify-center gap-2"><Plus className="w-5 h-5" /> Aggiungi</button>
                     )}
                   </div>
