@@ -845,7 +845,7 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
                       </button>
                     )
                   })}
-                  {results.length === 0 && query && !loading && <p className="col-span-full text-center text-slate-400">Nessun risultato.</p>}
+                  {results.length === 0 && query && !loading && <p className="col-span-full text-center text-slate-500">Nessun risultato.</p>}
                 </div>
               )}
             </>
@@ -898,7 +898,7 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
                       </button>
                     ))}
                     {boards.filter(b => b.type === 'grid' || b.type === 'sequence').length === 0 && (
-                      <div className="text-center p-8 text-slate-400 border-2 border-dashed rounded-xl">Non hai ancora creato progetti di comunicazione.</div>
+                      <div className="text-center p-8 text-slate-500 border-2 border-dashed rounded-xl">Non hai ancora creato progetti di comunicazione.</div>
                     )}
                   </div>
                 </div>
@@ -941,7 +941,7 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
                   <div className="flex-1 overflow-y-auto min-h-[300px]">
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
                       {(!viewItems || viewItems.length === 0) ? (
-                        <div className="col-span-full text-center text-slate-400 py-10">
+                        <div className="col-span-full text-center text-slate-500 py-10">
                           {selectedBoard ? "Caricamento immagini..." : "Pagina vuota."}
                         </div>
                       ) : (
@@ -1113,7 +1113,7 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
           <div className="space-y-2">
             <div className="flex justify-between px-1">
               <label className="text-xs font-bold uppercase text-slate-500">Zoom</label>
-              <span className="text-xs text-slate-400">{Math.round(zoom * 100)}%</span>
+              <span className="text-xs text-slate-500">{Math.round(zoom * 100)}%</span>
             </div>
             <input type="range" value={zoom} min={0.5} max={3} step={0.1} onChange={(e) => setZoom(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
           </div>
@@ -1130,7 +1130,7 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
                       <div><strong>Elaborazione sul dispositivo:</strong> nessuna immagine lascia il tablet. Il primo utilizzo scarica il modello (~44 MB), poi funziona anche offline.</div>
                     </div>
                     <div className="mt-3" onClick={(e) => e.preventDefault()}>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Rifinitura bordi</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Rifinitura bordi</span>
                       <div className="mt-1 grid grid-cols-3 gap-1 rounded-lg bg-slate-100 dark:bg-slate-900 p-1">
                         {(['morbido', 'normale', 'netto'] as EdgeMode[]).map((m) => (
                           <button
@@ -1236,7 +1236,7 @@ const VoiceControls = ({ enabled, onToggle }) => {
               <option value="">Voce predefinita del dispositivo</option>
               {voices.map((v) => (<option key={v.uri} value={v.uri}>{v.name} ({v.lang})</option>))}
             </select>
-            {voices.length === 0 && <p className="mt-1 text-[11px] text-slate-400">Nessuna voce italiana trovata: verrà usata quella di sistema.</p>}
+            {voices.length === 0 && <p className="mt-1 text-[11px] text-slate-500">Nessuna voce italiana trovata: verrà usata quella di sistema.</p>}
           </div>
           <div>
             <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
@@ -1347,7 +1347,7 @@ const PictogramCard = ({
         {isEditing && !isLocked && onEditLabel ? (
           <input type="text" value={tempLabel} onClick={(e) => e.stopPropagation()} onChange={(e) => setTempLabel(e.target.value)} onBlur={saveLabel} onKeyDown={(e) => e.key === 'Enter' && saveLabel()} className="w-full text-sm font-bold bg-blue-50 dark:bg-slate-600 rounded px-1 outline-none border border-blue-300" autoFocus />
         ) : (
-          <p onClick={(e) => { if (!isLocked && onEditLabel) { e.stopPropagation(); setIsEditing(true); } }} className={`font-bold uppercase tracking-wide truncate ${!isLocked && onEditLabel ? 'cursor-text hover:text-blue-600 dark:hover:text-blue-400' : ''} ${item.completed ? 'line-through decoration-2 text-slate-400' : 'text-slate-800 dark:text-slate-200'} ${isVerticalSequence ? 'text-xl' : 'text-sm md:text-base'}`}>{item.label}</p>
+          <p onClick={(e) => { if (!isLocked && onEditLabel) { e.stopPropagation(); setIsEditing(true); } }} className={`font-bold uppercase tracking-wide truncate ${!isLocked && onEditLabel ? 'cursor-text hover:text-blue-600 dark:hover:text-blue-400' : ''} ${item.completed ? 'line-through decoration-2 text-slate-500' : 'text-slate-800 dark:text-slate-200'} ${isVerticalSequence ? 'text-xl' : 'text-sm md:text-base'}`}>{item.label}</p>
         )}
       </div>
     </div>
@@ -1860,7 +1860,7 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
               <button onClick={toggleTimer} className={`w-10 h-10 md:w-12 md:h-12 rounded-xl shadow-sm flex items-center justify-center transition-all active:scale-95 ${isActive ? 'bg-amber-100 text-amber-600' : isRinging ? 'bg-red-600 text-white animate-bounce' : 'bg-green-500 text-white'}`}>
                 {isRinging || isActive ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
               </button>
-              <button onClick={resetTimer} className="w-10 h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-600 rounded-xl flex items-center justify-center active:bg-slate-100">
+              <button onClick={resetTimer} className="w-10 h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-600 rounded-xl flex items-center justify-center active:bg-slate-100">
                 <ResetIcon className="w-5 h-5" />
               </button>
             </div>
@@ -1924,7 +1924,7 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
 
             <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 p-1 rounded-lg border border-slate-200 dark:border-slate-700 shrink-0">
               <input type="number" min="0" aria-label="Minuti del nuovo preset" placeholder="M" value={newMin} onChange={(e) => setNewMin(e.target.value)} className="w-9 py-2 bg-transparent text-center font-bold outline-none text-sm dark:text-white" />
-              <span className="text-slate-400 text-sm">:</span>
+              <span className="text-slate-500 text-sm">:</span>
               <input type="number" min="0" max="59" aria-label="Secondi del nuovo preset" placeholder="S" value={newSec} onChange={(e) => setNewSec(e.target.value)} className="w-9 py-2 bg-transparent text-center font-bold outline-none text-sm dark:text-white" />
               <button onClick={addPreset} aria-label="Aggiungi preset" className="p-2 min-h-touch min-w-touch flex items-center justify-center bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-600 hover:text-white transition-colors"><Plus className="w-4 h-4" /></button>
             </div>
@@ -2893,7 +2893,7 @@ export default function App() {
 
             <div className="sticky top-20 z-30 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-sm p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row gap-4 justify-between items-center shadow-sm">
               <div className="relative w-full md:w-auto md:min-w-[300px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input type="search" aria-label="Cerca fra i tuoi progetti" placeholder="Cerca i tuoi progetti..." value={dashboardSearch} onChange={(e) => setDashboardSearch(e.target.value)} className="w-full pl-10 pr-4 py-3 min-h-touch rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div className="grid grid-cols-2 gap-2 w-full md:flex md:w-auto">
@@ -2915,7 +2915,7 @@ export default function App() {
             </div>
 
             <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredBoards.length === 0 ? <div className="col-span-full text-center py-12 text-slate-400">Nessun progetto trovato.</div> : filteredBoards.map(board => (
+              {filteredBoards.length === 0 ? <div className="col-span-full text-center py-12 text-slate-500">Nessun progetto trovato.</div> : filteredBoards.map(board => (
                 <div key={board.id} onClick={() => openBoard(board.id)} className="group bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer flex flex-col overflow-hidden relative">
                   <div className={`h-32 w-full flex items-center justify-center relative bg-slate-100 dark:bg-slate-700/50 ${board.coverImage ? 'p-0' : 'p-4'}`}>
                     {board.coverImage && board.coverImage.iconId ? (
@@ -2965,7 +2965,7 @@ export default function App() {
               <div className="print:hidden sticky top-[4.25rem] z-30 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm rounded-2xl border-2 border-slate-200 dark:border-slate-700 shadow-lg p-3 flex items-center gap-3">
                 <div className="flex-1 flex items-center gap-2 overflow-x-auto min-h-[72px] scrollbar-hide" aria-live="polite" aria-label="Frase composta">
                   {sentence.length === 0 ? (
-                    <p className="text-sm text-slate-400 px-2">Tocca i simboli per comporre una frase…</p>
+                    <p className="text-sm text-slate-500 px-2">Tocca i simboli per comporre una frase…</p>
                   ) : (
                     sentence.map((item) => (
                       <div key={item.key} className="shrink-0 w-16 flex flex-col items-center gap-1">
@@ -3017,7 +3017,7 @@ export default function App() {
             <div className={`print:hidden flex flex-col gap-4 bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 transition-all ${isLocked ? 'opacity-90' : ''}`}>
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="w-full md:w-auto flex-1">
-                  {!isLocked && <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Titolo</label>}
+                  {!isLocked && <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Titolo</label>}
                   {isLocked ? <h2 className="text-2xl font-extrabold text-slate-800 dark:text-white">{currentBoard.title}</h2> : <input type="text" aria-label="Titolo del progetto" value={currentBoard.title} onChange={(e) => setCurrentBoard({ ...currentBoard, title: e.target.value })} className="text-2xl font-extrabold bg-transparent text-slate-800 dark:text-white outline-none w-full min-h-touch py-1 border-b border-transparent focus:border-blue-500" placeholder="Titolo..." />}
                 </div>
                 {!isLocked && (
@@ -3084,7 +3084,7 @@ export default function App() {
 
                       {!isLocked && currentBoard.pages.length > 1 && activePageIndex === index && (
                         <button
-                          className="p-1 hover:bg-red-100 text-slate-400 hover:text-red-500 rounded-full transition-colors ml-2"
+                          className="p-1 hover:bg-red-100 text-slate-500 hover:text-red-500 rounded-full transition-colors ml-2"
                           onClick={(e) => {
                             e.stopPropagation();
                             if (confirm(`Eliminare la pagina "${page.name}" e tutti i suoi simboli?`)) {
@@ -3118,7 +3118,7 @@ export default function App() {
                           setTimeout(() => setActivePageIndex(currentBoard.pages.length), 50);
                         }
                       }}
-                      className="flex items-center gap-1 px-3 py-2 mb-1 ml-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      className="flex items-center gap-1 px-3 py-2 mb-1 ml-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                       title="Aggiungi nuova pagina vuota"
                     >
                       <Plus className="w-5 h-5" />
@@ -3156,7 +3156,7 @@ export default function App() {
                             <div className="w-12 h-12 mr-3 flex items-center justify-center">
                               {item.iconId ? (() => { const IconComp = getIconComponent(item.iconId); const style = getPresetStyle(item.iconId); return <IconComp className={`w-8 h-8 ${style.icon}`} />; })() : item.imageUrl ? <img src={item.imageUrl} className="max-w-full max-h-full" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <ImageIcon className="text-slate-300" />}
                             </div>
-                            <span className={`font-bold ${item.completed ? 'line-through text-slate-400' : 'text-slate-800 dark:text-white'}`}>{item.label}</span>
+                            <span className={`font-bold ${item.completed ? 'line-through text-slate-500' : 'text-slate-800 dark:text-white'}`}>{item.label}</span>
                           </div>
                         ))}
                       </div>
@@ -3237,7 +3237,7 @@ export default function App() {
                   {/* Area Contenuto Storia - AGGIUNTA CLASSE print-only-content */}
                   <div className="story-print-container print-only-content flex-1 bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-y-auto min-h-[50vh]">
                     {activeItems.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-50 print:hidden">
+                      <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-50 print:hidden">
                         <BookOpen className="w-16 h-16 mb-4" />
                         <p>Scrivi la tua storia nella barra in basso...</p>
                       </div>
@@ -3263,7 +3263,7 @@ export default function App() {
                                     });
                                   }
                                 }}
-                                className="absolute -right-5 top-1/2 -translate-y-1/2 z-20 bg-slate-100 border border-slate-300 hover:bg-blue-500 hover:text-white text-slate-400 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all shadow-sm print:hidden"
+                                className="absolute -right-5 top-1/2 -translate-y-1/2 z-20 bg-slate-100 border border-slate-300 hover:bg-blue-500 hover:text-white text-slate-500 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all shadow-sm print:hidden"
                               >
                                 <LinkIcon className="w-3 h-3" />
                               </button>
@@ -3312,7 +3312,7 @@ export default function App() {
                         <input
                           type="text"
                           placeholder="Scrivi qui la storia..."
-                          className="flex-1 bg-transparent px-4 py-3 outline-none text-slate-800 dark:text-white text-lg placeholder:text-slate-400"
+                          className="flex-1 bg-transparent px-4 py-3 outline-none text-slate-800 dark:text-white text-lg placeholder:text-slate-500"
                           onKeyDown={async (e) => {
                             if (e.key === 'Enter' && e.currentTarget.value.trim()) {
                               const text = e.currentTarget.value;
@@ -3420,7 +3420,7 @@ export default function App() {
               )}
               {/* Messaggio "Vuoto" (NASCOSTO PER IL TIMER) */}
               {currentBoard.type !== 'token' && currentBoard.type !== 'story' && currentBoard.type !== 'pecs' && currentBoard.type !== 'timer' && activeItems.length === 0 && (
-                <div className="text-center text-slate-400">
+                <div className="text-center text-slate-500">
                   <div className="bg-white dark:bg-slate-800 p-4 rounded-full inline-block mb-3 shadow-sm"><ImageIcon className="w-8 h-8 opacity-50" /></div>
                   <p>{isLocked ? "Nessun elemento." : "Clicca \"Aggiungi\" per iniziare."}</p>
                 </div>
