@@ -41,6 +41,11 @@ jobs:
       - name: Sincronizza Capacitor
         run: npx cap sync android
 
+      - name: Rendi eseguibile gradlew
+        # Difesa: se il bit di esecuzione si perde di nuovo (succede facilmente
+        # passando dai client Windows), la build non deve fermarsi qui.
+        run: chmod +x android/gradlew
+
       - name: Compila APK di debug
         # L'APK di debug è firmato con la chiave di debug di Android: si
         # installa direttamente (va abilitata l'installazione da origini

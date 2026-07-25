@@ -150,6 +150,19 @@ const BOARD_TYPE_COLORS = {
   timer: 'bg-cyan-100 text-cyan-600',
 };
 
+// Chiude una finestra modale con Esc. Prima l'unica via d'uscita era la X in
+// alto a destra, scomoda su desktop e non raggiungibile da tastiera.
+const useEscapeToClose = (isOpen: boolean, onClose: () => void) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
+};
+
 const getPresetStyle = (iconId) => {
   const preset = PRESET_ICONS.find(p => p.id === iconId);
   return preset ? preset.style : PRESET_ICONS[0].style;
@@ -603,6 +616,7 @@ const processAdvancedImage = async (
 // --- SEARCH MODAL (AGGIORNATO CON IMPORT PROGETTI) ---
 // --- SEARCH MODAL (FIX IMMAGINI ROTTE + ORDINE NUMERICO) ---
 const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = [] }) => {
+  useEscapeToClose(isOpen, onClose);
   const [query, setQuery] = useState(initialQuery);
   const [googleQuery, setGoogleQuery] = useState('');
   const [urlInput, setUrlInput] = useState('');
@@ -1015,6 +1029,9 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
   const [progress, setProgress] = useState<RmbgProgress | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
 
+  // Esc chiude l'editor, ma non a metà elaborazione: si perderebbe il lavoro.
+  useEscapeToClose(isOpen && !processing, onClose);
+
   // Reset
   useEffect(() => {
     setZoom(1);
@@ -1357,6 +1374,7 @@ const PictogramCard = ({
 // --- HELP MODAL COMPONENT ---
 // --- HELP MODAL COMPONENT (COMPLETO CON ISTRUZIONI TIMER) ---
 const HelpModal = ({ isOpen, onClose }) => {
+  useEscapeToClose(isOpen, onClose);
   if (!isOpen) return null;
 
   return (
