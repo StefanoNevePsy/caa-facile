@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import SyncBackupModal from './SyncBackupModal';
+import StoryWriter from './StoryWriter';
+import { urlImmagineArasaac, type SimboloRisolto } from './lib/symbolizer';
 import { App as CapApp } from '@capacitor/app';
 import type { PluginListenerHandle } from '@capacitor/core';
 // Aggiungi questi import in alto
@@ -466,6 +468,17 @@ const getImageUrl = async (sourceId): Promise<string | null> => {
     return URL.createObjectURL(record.blob);
   }
   return null;
+};
+
+/**
+ * Restituisce un URL utilizzabile per un pittogramma ARASAAC, scaricandolo e
+ * mettendolo in cache al primo uso. Dopo la prima volta funziona offline.
+ */
+const resolveArasaacImage = async (sourceId: string): Promise<string | null> => {
+  const esistente = await getImageUrl(sourceId);
+  if (esistente) return esistente;
+  await cacheArasaacImage(urlImmagineArasaac(sourceId), sourceId);
+  return await getImageUrl(sourceId);
 };
 
 /**
@@ -2704,6 +2717,43 @@ export default function App() {
   const activeItems = getActiveItems();
   const { ref: pecsWrapRef, scale: pecsScale } = useFitToWidth(currentBoard?.type === 'pecs');
 
+  /**
+   * Testo sorgente della storia. I progetti creati con la versione precedente
+   * hanno solo le tessere: ricostruiamo il testo dalle etichette, così si
+   * aprono e si continuano a modificare senza perdere nulla.
+   */
+  const storyText = useMemo(() => {
+    if (currentBoard?.type !== 'story') return '';
+    if (typeof currentBoard.storyText === 'string') return currentBoard.storyText;
+    return (currentBoard.items || []).map((i: any) => i.label).filter(Boolean).join(' ');
+  }, [currentBoard]);
+
+  /**
+   * I simboli risolti vengono riversati in `items`: stampa, backup e
+   * sincronizzazione continuano a funzionare sulla struttura che già conoscono.
+   */
+  const handleStorySymbols = useCallback((simboli: SimboloRisolto[]) => {
+    setCurrentBoard((prev: any) => {
+      if (!prev || prev.type !== 'story') return prev;
+      const nuovi = simboli.map((s, i) => ({
+        id: `${s.chiave || 'vuoto'}-${i}`,
+        label: s.testo,
+        sourceId: s.sourceId,
+        imageUrl: s.imageUrl,
+        completed: false,
+      }));
+      // Evita un aggiornamento di stato (e quindi un salvataggio) se nulla è
+      // cambiato: senza questo controllo si entrerebbe in un ciclo di render.
+      const precedenti = prev.items || [];
+      const uguali =
+        precedenti.length === nuovi.length &&
+        precedenti.every((p: any, i: number) => p.label === nuovi[i].label && p.sourceId === nuovi[i].sourceId);
+      if (uguali) return prev;
+      return { ...prev, items: nuovi };
+    });
+  }, []);
+
+
   const filteredBoards = useMemo(() => {
     let result = [...boards];
     if (dashboardFilter !== 'all') result = result.filter(b => b.type === dashboardFilter);
@@ -3062,7 +3112,8 @@ export default function App() {
                     {(currentBoard.type === 'grid' || currentBoard.type === 'sequence' || currentBoard.type === 'story') && (
                       <VoiceControls enabled={voiceEnabled} onToggle={() => setVoiceEnabled((v) => !v)} />
                     )}
-                    {currentBoard.type !== 'token' && (
+                    {/* Nelle storie non serve: i simboli nascono dal testo scritto. */}
+                    {currentBoard.type !== 'token' && currentBoard.type !== 'story' && (
                       <button onClick={() => { setEditingContext(null); setShowSearch(true); }} className="bg-slate-900 dark:bg-blue-600 text-white px-5 py-3 min-h-touch rounded-xl font-bold shadow-lg hover:scale-105 transition-transform flex items-center justify-center gap-2"><Plus className="w-5 h-5" /> Aggiungi</button>
                     )}
                   </div>
@@ -3221,9 +3272,9 @@ export default function App() {
                   </div>
                 </div>
               )}
-              {/* --- RENDERER STORIE SOCIALI (Print Optimized) --- */}
+              {/* --- RENDERER STORIE SOCIALI (writer basato sul testo) --- */}
               {currentBoard.type === 'story' && (
-                <div className="flex flex-col h-full relative pb-32">
+                <div className="flex flex-col h-full relative">
                   {/* Header Strumenti Storia (Visibile solo a schermo) */}
                   <div className="print:hidden w-full bg-pink-50 dark:bg-pink-900/20 p-3 rounded-xl border border-pink-100 dark:border-pink-800 mb-4 flex flex-wrap gap-4 justify-between items-center">
                     <div className="flex items-center gap-2 text-pink-800 dark:text-pink-200 text-sm font-bold">
@@ -3252,108 +3303,20 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Area Contenuto Storia - AGGIUNTA CLASSE print-only-content */}
-                  <div className="story-print-container print-only-content flex-1 bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-y-auto min-h-[50vh]">
-                    {activeItems.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-50 print:hidden">
-                        <BookOpen className="w-16 h-16 mb-4" />
-                        <p>Scrivi la tua storia nella barra in basso...</p>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap items-end gap-x-4 gap-y-8 content-start">
-                        {activeItems.map((item, index) => (
-                          <div key={item.id} className="group relative flex flex-col items-center justify-end w-[3.5cm] break-inside-avoid">
-
-                            {/* Pulsante Unisci parole */}
-                            {!isLocked && index < activeItems.length - 1 && (
-                              <button
-                                onClick={async () => {
-                                  const nextItem = activeItems[index + 1];
-                                  const newLabel = item.label + " " + nextItem.label;
-                                  removeItem(nextItem.id);
-                                  updateLabel(item.id, newLabel);
-                                  const result = await quickSearchArasaac(newLabel);
-                                  if (result.found) {
-                                    setCurrentBoard(prev => {
-                                      const copy = { ...prev };
-                                      copy.items = copy.items.map(i => i.id === item.id ? { ...i, imageUrl: result.imageUrl, sourceId: result.sourceId } : i);
-                                      return copy;
-                                    });
-                                  }
-                                }}
-                                className="absolute -right-5 top-1/2 -translate-y-1/2 z-20 bg-slate-100 border border-slate-300 hover:bg-blue-500 hover:text-white text-slate-500 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all shadow-sm print:hidden"
-                              >
-                                <LinkIcon className="w-3 h-3" />
-                              </button>
-                            )}
-
-                            {/* Immagine */}
-                            <div
-                              onClick={() => {
-                                if (!isLocked) {
-                                  setEditingContext({ type: 'item', id: item.id, initialTerm: item.label });
-                                  setShowSearch(true);
-                                }
-                              }}
-                              className={`w-full aspect-square border-2 ${!isLocked ? 'border-slate-100 hover:border-pink-400 cursor-pointer' : 'border-transparent'} rounded-xl overflow-hidden mb-1 bg-white relative shadow-sm print:border-none print:shadow-none`}
-                            >
-                              {item.imageUrl ? (
-                                <img src={item.imageUrl} className="w-full h-full object-contain p-1" />
-                              ) : (
-                                <div className="w-full h-full bg-slate-50 flex items-center justify-center text-slate-300 font-bold text-xs uppercase p-2 text-center break-words print:bg-transparent">
-                                  {item.label}
-                                </div>
-                              )}
-                              {!isLocked && <div className="absolute top-0 right-0 p-1 opacity-0 group-hover:opacity-100 print:hidden"><button onClick={(e) => { e.stopPropagation(); removeItem(item.id) }} className="bg-red-500 text-white rounded-full p-0.5"><X className="w-3 h-3" /></button></div>}
-                            </div>
-
-                            {/* Testo Editabile (Input a schermo, Testo in stampa) */}
-                            {!isLocked ? (
-                              <input
-                                className="w-full text-center font-sans font-bold text-lg bg-transparent border-b-2 border-transparent focus:border-blue-500 outline-none transition-colors text-slate-800 dark:text-slate-200 print:hidden"
-                                value={item.label}
-                                onChange={(e) => updateLabel(item.id, e.target.value)}
-                              />
-                            ) : null}
-                            {/* Testo visibile SEMPRE in stampa o se bloccato */}
-                            <span className={`text-lg font-bold font-sans text-center leading-tight text-slate-800 dark:text-slate-200 ${!isLocked ? 'hidden print:block' : ''}`}>{item.label}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Barra Input */}
-                  {!isLocked && (
-                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-50 print:hidden">
-                      <div className="bg-white dark:bg-slate-900 p-2 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex gap-2 items-center ring-4 ring-pink-50 dark:ring-pink-900/20">
-                        <input
-                          type="text"
-                          placeholder="Scrivi qui la storia..."
-                          className="flex-1 bg-transparent px-4 py-3 outline-none text-slate-800 dark:text-white text-lg placeholder:text-slate-500"
-                          onKeyDown={async (e) => {
-                            if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                              const text = e.currentTarget.value;
-                              e.currentTarget.value = '';
-                              const words = text.split(' ').filter(w => w.trim());
-                              setIsSaving(true);
-                              const newItems = await Promise.all(words.map(async (word) => {
-                                const search = await quickSearchArasaac(word);
-                                return { id: crypto.randomUUID(), label: word, imageUrl: search.imageUrl, sourceId: search.sourceId, completed: false };
-                              }));
-                              setCurrentBoard(prev => ({ ...prev, items: [...(prev.items || []), ...newItems] }));
-                              setIsSaving(false);
-                            }
-                          }}
-                        />
-                        <div className="bg-pink-600 text-white p-3 rounded-xl"><ArrowRight className="w-6 h-6" /></div>
-                      </div>
-                    </div>
-                  )}
+                  <StoryWriter
+                    testo={storyText}
+                    onTestoChange={(t) => setCurrentBoard(prev => ({ ...prev, storyText: t }))}
+                    onSimboliChange={handleStorySymbols}
+                    risolviImmagine={resolveArasaacImage}
+                    compattaParoleFunzione={!!currentBoard.settings?.compattaParoleFunzione}
+                    onCompattaChange={(v) => updateTokenSettings('compattaParoleFunzione', v)}
+                    isLocked={isLocked}
+                    onLeggi={voiceEnabled && speechAvailable ? speak : undefined}
+                  />
                 </div>
               )}
 
-              {/* --- RENDERER PECS GENERATOR (Grid Fissa & Sicura) --- */}
+{/* --- RENDERER PECS GENERATOR (Grid Fissa & Sicura) --- */}
               {currentBoard.type === 'pecs' && (
                 <div className="flex flex-col items-center w-full">
                   <div className="print:hidden w-full max-w-4xl bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 mb-6 flex flex-wrap gap-4 items-center justify-between">
