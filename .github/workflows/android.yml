@@ -5,7 +5,9 @@ name: Build APK Android
 
 on:
   push:
-    branches: [main]
+    # Anche i rami di lavoro producono un APK, così si può provare la build
+    # su un dispositivo reale prima di unire le modifiche.
+    branches: [main, 'claude/**']
   pull_request:
     branches: [main]
   workflow_dispatch:
