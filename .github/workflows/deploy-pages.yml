@@ -1,0 +1,62 @@
+name: Deploy su GitHub Pages
+
+# Pubblica la web app (installabile come PWA su PC e iPhone) su GitHub Pages.
+# Prima del primo utilizzo, in Settings > Pages, impostare "Source: GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Una sola pubblicazione alla volta; le esecuzioni in coda vengono sostituite
+# dall'ultima, ma quella in corso viene lasciata finire.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        # `base` deve corrispondere al percorso del sito di progetto
+        # (https://<utente>.github.io/<repo>/), altrimenti asset e service
+        # worker vengono cercati nella radice del dominio.
+        run: npm run build
+        env:
+          VITE_BASE: /${{ github.event.repository.name }}/
+
+      - name: Copia index.html come 404.html
+        # Fallback per i percorsi profondi: GitHub Pages non conosce le rotte
+        # dell'app e restituirebbe un 404 del server.
+        run: cp dist/index.html dist/404.html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
