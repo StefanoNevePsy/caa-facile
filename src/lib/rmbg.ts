@@ -79,10 +79,18 @@ function getWorker(): Worker {
 }
 
 /**
- * Scalda il modello in background. Va chiamata quando l'utente apre l'editor,
- * cosi' il download parte prima che prema "Salva".
+ * Scalda il modello in background quando l'utente apre l'editor, cosi' e' gia'
+ * pronto quando preme "Salva".
+ *
+ * Sotto rete lenta o con "risparmio dati" attivo non anticipiamo niente: sono
+ * 44 MB, e conviene scaricarli solo se la rimozione sfondo viene davvero usata
+ * (con la barra di avanzamento a spiegare l'attesa).
  */
 export function preloadRmbg(): void {
+  const connection = (navigator as any).connection;
+  if (connection?.saveData) return;
+  if (connection?.effectiveType && /2g$/.test(connection.effectiveType)) return;
+
   try {
     getWorker();
   } catch {
