@@ -450,7 +450,7 @@ export default function SyncBackupModal({ isOpen, onClose, boards, onRefresh }: 
                     {/* TAB P2P OVERVIEW */}
                     {activeTab === 'p2p' && !p2pMode && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div onClick={() => setActiveTab('export') || setTimeout(startP2PSender, 100)} className="bg-purple-50 dark:bg-slate-800 hover:bg-purple-100 dark:hover:bg-slate-700 border-2 border-purple-200 dark:border-purple-800 p-6 rounded-2xl cursor-pointer transition-all flex flex-col items-center text-center">
+                            <div onClick={() => { setActiveTab('export'); setTimeout(startP2PSender, 100); }} className="bg-purple-50 dark:bg-slate-800 hover:bg-purple-100 dark:hover:bg-slate-700 border-2 border-purple-200 dark:border-purple-800 p-6 rounded-2xl cursor-pointer transition-all flex flex-col items-center text-center">
                                 <Upload className="w-12 h-12 text-purple-600 mb-3" />
                                 <h3 className="font-bold text-lg dark:text-white">Invia (Mittente)</h3>
                                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-2">Invia dati da questo dispositivo ad un altro selezionando prima cosa inviare nella Checklist.</p>

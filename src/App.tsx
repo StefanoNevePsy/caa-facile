@@ -14,15 +14,18 @@ import {
   ChevronDown, Wifi, Mouse, CheckSquare // Icone per il Timer e Suono
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
-import { removeBackground } from "@imgly/background-removal";
 import SyncBackupModal from './SyncBackupModal';
+import StoryWriter from './StoryWriter';
+import { DiscoTimer, ClessidraTimer, BatteriaTimer, RazzoTimer, TortaTimer, type TimerTheme } from './TimerThemes';
+import { urlImmagineArasaac, type SimboloRisolto } from './lib/symbolizer';
 import { App as CapApp } from '@capacitor/app';
 import type { PluginListenerHandle } from '@capacitor/core';
 // Aggiungi questi import in alto
 import { polyfill } from "mobile-drag-drop";
 import { scrollBehaviourDragImageTranslateOverride } from "mobile-drag-drop/scroll-behaviour";
 import "mobile-drag-drop/default.css";
-import { pipeline, env, AutoModel, AutoProcessor, RawImage, Tensor } from '@huggingface/transformers';
+import { removeBackground, preloadRmbg, type EdgeMode, type RmbgProgress } from './lib/rmbg';
+import { speak, stopSpeaking, isSpeechSupported, primeSpeech, listVoices, getPreferredVoice, setPreferredVoice, getRate, setRate, type VoiceOption } from './lib/speech';
 
 // Chiama questa funzione subito fuori dal componente, o dentro uno useEffect in App
 polyfill({
@@ -108,6 +111,19 @@ const TIMER_PRESETS = [
   { label: '30 min', seconds: 1800 },
 ];
 
+// I temi del timer visivo. Bambini diversi leggono il tempo in modi diversi:
+// il disco mostra una quantità che cala, la sabbia un travaso, razzo e batteria
+// un traguardo che si avvicina. Poterlo cambiare è parte dello strumento.
+const TIMER_THEMES: Array<{ id: TimerTheme; label: string; nota: string }> = [
+  { id: 'disc', label: 'Disco (Time Timer)', nota: 'Il settore colorato si riduce girando' },
+  { id: 'liquid', label: 'Boccia liquida', nota: 'Il livello si abbassa scoprendo l\'immagine' },
+  { id: 'sand', label: 'Clessidra', nota: 'La sabbia scende da un\'ampolla all\'altra' },
+  { id: 'mouse', label: 'Topolino e formaggio', nota: 'Il topo mangia il percorso' },
+  { id: 'battery', label: 'Batteria', nota: 'La carica cala a tacche' },
+  { id: 'rocket', label: 'Razzo', nota: 'Sale verso il premio' },
+  { id: 'cake', label: 'Torta', nota: 'Le fette spariscono una alla volta' },
+];
+
 const TIMER_SOUNDS = [
   { id: 'digital', label: 'Beep Digitale', url: 'https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg' },
   { id: 'classic', label: 'Sveglia Classica', url: 'https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg' },
@@ -119,6 +135,49 @@ const TIMER_SOUNDS = [
   { id: 'whistle', label: 'Fischio', url: 'https://actions.google.com/sounds/v1/cartoon/slide_whistle.ogg' },
   { id: 'gong', label: 'Gong', url: 'https://cdn.freesound.org/previews/536/536774_11739077-lq.mp3' },
 ];
+
+// Etichette, icone e colori per tipo di progetto. Prima erano ripetuti inline
+// in tre punti e coprivano solo griglia/agenda/token: storie sociali, PECS e
+// timer finivano tutti etichettati come "Token".
+const BOARD_TYPE_LABELS = {
+  grid: 'Comunicazione',
+  sequence: 'Agenda',
+  token: 'Token Economy',
+  story: 'Storia Sociale',
+  pecs: 'PECS da Taglio',
+  timer: 'Timer Visivo',
+};
+
+const BOARD_TYPE_ICONS = {
+  grid: LayoutGrid,
+  sequence: ListOrdered,
+  token: Trophy,
+  story: Book,
+  pecs: Scissors,
+  timer: Timer,
+};
+
+const BOARD_TYPE_COLORS = {
+  grid: 'bg-blue-100 text-blue-600',
+  sequence: 'bg-emerald-100 text-emerald-600',
+  token: 'bg-amber-100 text-amber-600',
+  story: 'bg-pink-100 text-pink-600',
+  pecs: 'bg-indigo-100 text-indigo-600',
+  timer: 'bg-cyan-100 text-cyan-600',
+};
+
+// Chiude una finestra modale con Esc. Prima l'unica via d'uscita era la X in
+// alto a destra, scomoda su desktop e non raggiungibile da tastiera.
+const useEscapeToClose = (isOpen: boolean, onClose: () => void) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
+};
 
 const getPresetStyle = (iconId) => {
   const preset = PRESET_ICONS.find(p => p.id === iconId);
@@ -202,8 +261,8 @@ export const base64ToBlob = async (base64) => {
  * NATIVE INDEXEDDB UTILITIES
  * ==========================================
  */
-const openDB = () => {
-  return new Promise((resolve, reject) => {
+const openDB = (): Promise<IDBDatabase> => {
+  return new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
@@ -227,7 +286,7 @@ const openDB = () => {
 export const dbOperations = {
   async getAllBoards() {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
       const transaction = db.transaction(['boards'], 'readonly');
       const store = transaction.objectStore('boards');
       const request = store.getAll();
@@ -238,7 +297,7 @@ export const dbOperations = {
 
   async getAllImages() {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
       const transaction = db.transaction(['images'], 'readonly');
       const store = transaction.objectStore('images');
       const request = store.getAll();
@@ -249,7 +308,7 @@ export const dbOperations = {
 
   async addBoard(board) {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
       const transaction = db.transaction(['boards'], 'readwrite');
       const store = transaction.objectStore('boards');
       const { id, ...boardData } = board;
@@ -261,7 +320,7 @@ export const dbOperations = {
 
   async updateBoard(board) {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
       const transaction = db.transaction(['boards'], 'readwrite');
       const store = transaction.objectStore('boards');
       const request = store.put(board);
@@ -272,7 +331,7 @@ export const dbOperations = {
 
   async getBoard(id) {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
       const transaction = db.transaction(['boards'], 'readonly');
       const store = transaction.objectStore('boards');
       const request = store.get(id);
@@ -283,7 +342,7 @@ export const dbOperations = {
 
   async deleteBoard(id) {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
       const transaction = db.transaction(['boards'], 'readwrite');
       const store = transaction.objectStore('boards');
       const request = store.delete(id);
@@ -294,7 +353,7 @@ export const dbOperations = {
 
   async getImageBySourceId(sourceId) {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
       const transaction = db.transaction(['images'], 'readonly');
       const store = transaction.objectStore('images');
       const index = store.index('sourceId');
@@ -306,7 +365,7 @@ export const dbOperations = {
 
   async addImage(imageRecord) {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
       const transaction = db.transaction(['images'], 'readwrite');
       const store = transaction.objectStore('images');
       const request = store.add(imageRecord);
@@ -317,7 +376,7 @@ export const dbOperations = {
 
   async putImage(imageRecord) {
     const db: any = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
       const transaction = db.transaction(['images'], 'readwrite');
       const store = transaction.objectStore('images');
       const request = store.put(imageRecord);
@@ -328,7 +387,7 @@ export const dbOperations = {
 
   async getAllSounds() {
     const db: any = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
       if (!db.objectStoreNames.contains('sounds')) return resolve([]);
       const transaction = db.transaction(['sounds'], 'readonly');
       const store = transaction.objectStore('sounds');
@@ -340,7 +399,7 @@ export const dbOperations = {
 
   async putSound(soundRecord) {
     const db: any = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
       if (!db.objectStoreNames.contains('sounds')) return resolve(null);
       const transaction = db.transaction(['sounds'], 'readwrite');
       const store = transaction.objectStore('sounds');
@@ -352,7 +411,7 @@ export const dbOperations = {
 
   async deleteSound(id) {
     const db: any = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
       if (!db.objectStoreNames.contains('sounds')) return resolve(null);
       const transaction = db.transaction(['sounds'], 'readwrite');
       const store = transaction.objectStore('sounds');
@@ -364,7 +423,7 @@ export const dbOperations = {
 
   async clearDatabase() {
     const db: any = await openDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
       const stores = Array.from(db.objectStoreNames);
       const transaction = db.transaction(stores, 'readwrite');
       if (stores.includes('boards')) transaction.objectStore('boards').clear();
@@ -413,7 +472,7 @@ const saveLocalImage = async (file) => {
   return uniqueId;
 };
 
-const getImageUrl = async (sourceId) => {
+const getImageUrl = async (sourceId): Promise<string | null> => {
   if (!sourceId) return null;
   const idStr = sourceId.toString();
   if (idStr.startsWith('http')) return idStr;
@@ -426,14 +485,25 @@ const getImageUrl = async (sourceId) => {
 };
 
 /**
+ * Restituisce un URL utilizzabile per un pittogramma ARASAAC, scaricandolo e
+ * mettendolo in cache al primo uso. Dopo la prima volta funziona offline.
+ */
+const resolveArasaacImage = async (sourceId: string): Promise<string | null> => {
+  const esistente = await getImageUrl(sourceId);
+  if (esistente) return esistente;
+  await cacheArasaacImage(urlImmagineArasaac(sourceId), sourceId);
+  return await getImageUrl(sourceId);
+};
+
+/**
  * ==========================================
  * UTILITIES: IMAGE PROCESSING (AI & CANVAS)
  * ==========================================
  */
 
 // Funzione helper per ritagliare l'immagine (FIXED per Android/Base64)
-const getCroppedImg = (imageSrc, pixelCrop) => {
-  return new Promise((resolve, reject) => {
+const getCroppedImg = (imageSrc: string, pixelCrop): Promise<string> => {
+  return new Promise<string>((resolve, reject) => {
     const image = new Image();
 
     // FIX CRUCIALE: Usiamo crossOrigin SOLO se è un URL web remoto.
@@ -471,8 +541,8 @@ const getCroppedImg = (imageSrc, pixelCrop) => {
 };
 
 // Funzione helper sicura per caricare immagini (FIXED)
-const loadImageElement = (src) => {
-  return new Promise((resolve, reject) => {
+const loadImageElement = (src: string): Promise<HTMLImageElement> => {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
 
     // FIX CRUCIALE: Idem come sopra, niente CORS per file locali
@@ -487,176 +557,81 @@ const loadImageElement = (src) => {
 };
 
 
-// Assicurati che gli import siano corretti:
-// import { env, AutoModel, AutoProcessor, RawImage } from '@xenova/transformers';
+/**
+ * Pipeline di elaborazione del pittogramma.
+ *
+ * 1. rimozione sfondo con RMBG-1.4 (opzionale, eseguita in un worker)
+ * 2. ritaglio scelto dall'utente
+ * 3. composizione su tela quadrata trasparente, con ombra opzionale
+ *
+ * A differenza della versione precedente non c'e' alcun passaggio intermedio in
+ * JPEG e il modello viene caricato una volta sola per sessione.
+ */
+const processAdvancedImage = async (
+  originalBlobUrl: string,
+  cropArea: { x: number; y: number; width: number; height: number } | null,
+  enableAI: boolean,
+  enableShadow: boolean,
+  aiOptions: { edgeMode?: EdgeMode; onProgress?: (p: RmbgProgress) => void } = {}
+): Promise<Blob> => {
+  const originalImgEl = await loadImageElement(originalBlobUrl);
+  let sourceForCropping: CanvasImageSource & { width: number; height: number } = originalImgEl;
 
-env.allowRemoteModels = false;
-env.allowLocalModels = true;
-env.localModelPath = import.meta.env.PROD ? './models/' : '/models/';
-
-// Assicurati che env.allowLocalModels sia true in alto nel file
-// env.allowLocalModels = true;
-// env.localModelPath = '/models/'; 
-
-const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableShadow) => {
-  try {
-    // 1. CARICAMENTO IMMAGINE ORIGINALE
-    const originalImgEl = await loadImageElement(originalBlobUrl);
-    let sourceForCropping = originalImgEl;
-
-    if (enableAI) {
-      const modelId = 'Xenova/rmbg-1.4';
-      env.allowLocalModels = true;
-      env.allowRemoteModels = false;
-      env.localModelPath = '/models/';
-
-      let model, processor;
-
-      console.log("Avvio AI con Soglia Aggressiva...");
-
-      try {
-        model = await AutoModel.from_pretrained(modelId, { device: 'webgpu', quantized: false, file: 'onnx/model.onnx' });
-      } catch (gpuError) {
-        model = await AutoModel.from_pretrained(modelId, { device: 'wasm', quantized: false, file: 'onnx/model.onnx' });
-      }
-
-      processor = await AutoProcessor.from_pretrained(modelId, { local_files_only: true });
-
-      // 2. PREPARAZIONE INPUT (LETTERBOXING 1024x1024)
-      const inputSize = 1024;
-      const processingCanvas = document.createElement('canvas');
-      processingCanvas.width = inputSize;
-      processingCanvas.height = inputSize;
-      const procCtx = processingCanvas.getContext('2d');
-
-      const originalWidth = originalImgEl.width;
-      const originalHeight = originalImgEl.height;
-
-      const scale = Math.min(inputSize / originalWidth, inputSize / originalHeight);
-      const scaledWidth = Math.round(originalWidth * scale);
-      const scaledHeight = Math.round(originalHeight * scale);
-      const offsetX = Math.round((inputSize - scaledWidth) / 2);
-      const offsetY = Math.round((inputSize - scaledHeight) / 2);
-
-      procCtx.drawImage(originalImgEl, offsetX, offsetY, scaledWidth, scaledHeight);
-
-      const preparedBlob = await new Promise(r => processingCanvas.toBlob(r, 'image/jpeg', 0.95));
-      const preparedUrl = URL.createObjectURL(preparedBlob);
-      const image = await RawImage.fromURL(preparedUrl);
-
-      // 3. INFERENZA
-      const { pixel_values } = await processor(image);
-      const { output } = await model({ input: pixel_values });
-
-      // 4. POST-PROCESSING CON SOGLIA (IL SEGRETO)
-      const maskTensor = output[0].mul(255).to('uint8');
-      const { data } = maskTensor;
-      const pixelCount = inputSize * inputSize;
-      const rgbaData = new Uint8ClampedArray(pixelCount * 4);
-
-      // SOGLIA DI TAGLIO (0-255)
-      // Più è alta, più rimuove lo sfondo (ma rischia di mangiare bordi sottili).
-      // 180 è un buon compromesso per eliminare aloni bianchi.
-      const ALPHA_THRESHOLD = 180;
-
-      for (let i = 0; i < pixelCount; i++) {
-        let val = data[i];
-
-        // LOGICA DI PULIZIA:
-        // Se l'IA non è sicura al 70% (180/255), consideralo sfondo e rendilo trasparente.
-        if (val < ALPHA_THRESHOLD) {
-          val = 0;
-        } else {
-          // Opzionale: ammorbidisci leggermente i bordi che superano la soglia
-          // per evitare l'effetto "pixellato" stile paint
-          val = 255;
-        }
-
-        rgbaData[i * 4] = 0;
-        rgbaData[i * 4 + 1] = 0;
-        rgbaData[i * 4 + 2] = 0;
-        rgbaData[i * 4 + 3] = val; // Alpha filtrato
-      }
-
-      const maskImageData = new ImageData(rgbaData, inputSize, inputSize);
-
-      // 5. APPLICAZIONE MASCHERA
-      const blendingCanvas = document.createElement('canvas');
-      blendingCanvas.width = originalWidth;
-      blendingCanvas.height = originalHeight;
-      const ctx = blendingCanvas.getContext('2d');
-
-      ctx.drawImage(originalImgEl, 0, 0);
-
-      const maskCanvas = document.createElement('canvas');
-      maskCanvas.width = inputSize;
-      maskCanvas.height = inputSize;
-      const maskCtx = maskCanvas.getContext('2d');
-      maskCtx.putImageData(maskImageData, 0, 0);
-
-      ctx.globalCompositeOperation = 'destination-in';
-      ctx.drawImage(
-        maskCanvas,
-        offsetX, offsetY, scaledWidth, scaledHeight,
-        0, 0, originalWidth, originalHeight
-      );
-
-      sourceForCropping = blendingCanvas;
-      URL.revokeObjectURL(preparedUrl);
-    }
-
-    // 6. APPLICAZIONE CROP/ZOOM UTENTE
-    let croppedCanvas = sourceForCropping;
-    if (cropArea) {
-      const c = document.createElement('canvas');
-      c.width = cropArea.width;
-      c.height = cropArea.height;
-      const ctx = c.getContext('2d');
-
-      ctx.drawImage(
-        sourceForCropping,
-        -cropArea.x,
-        -cropArea.y,
-        sourceForCropping.width,
-        sourceForCropping.height
-      );
-      croppedCanvas = c;
-    }
-
-    // 7. COMPOSIZIONE FINALE
-    const finalCanvas = document.createElement('canvas');
-    const fCtx = finalCanvas.getContext('2d');
-    const size = 500;
-    finalCanvas.width = size;
-    finalCanvas.height = size;
-    fCtx.clearRect(0, 0, size, size);
-
-    const scaleFactor = Math.min((size * 0.9) / croppedCanvas.width, (size * 0.9) / croppedCanvas.height);
-    const w = croppedCanvas.width * scaleFactor;
-    const h = croppedCanvas.height * scaleFactor;
-    const x = (size - w) / 2;
-    const y = (size - h) / 2;
-
-    if (enableShadow) {
-      fCtx.save();
-      fCtx.translate(x + w / 2, y + h);
-      fCtx.scale(1, 0.3);
-      fCtx.transform(1, 0, -0.5, 1, 0, 0);
-      fCtx.filter = 'blur(10px)';
-      fCtx.fillStyle = 'rgba(0,0,0,0.4)';
-      fCtx.fillRect(-w / 2, -h / 5, w, h / 3);
-      fCtx.restore();
-    }
-
-    fCtx.drawImage(croppedCanvas, x, y, w, h);
-
-    return new Promise(resolve => finalCanvas.toBlob(resolve, 'image/png'));
-
-  } catch (error) {
-    console.error("Errore elaborazione immagine:", error);
-    alert("Errore AI: " + error.message);
-    return processAdvancedImage(originalBlobUrl, cropArea, false, enableShadow);
+  if (enableAI) {
+    // Un fallimento dell'AI non deve far perdere il lavoro all'utente:
+    // proseguiamo con l'immagine originale e segnaliamo il problema a monte.
+    sourceForCropping = await removeBackground(originalImgEl, aiOptions);
   }
+
+  // 2. RITAGLIO SCELTO DALL'UTENTE (coordinate in pixel dell'immagine originale)
+  let croppedCanvas: CanvasImageSource & { width: number; height: number } = sourceForCropping;
+  if (cropArea && cropArea.width > 0 && cropArea.height > 0) {
+    const c = document.createElement('canvas');
+    c.width = Math.round(cropArea.width);
+    c.height = Math.round(cropArea.height);
+    const ctx = c.getContext('2d')!;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(
+      sourceForCropping,
+      -cropArea.x,
+      -cropArea.y,
+      sourceForCropping.width,
+      sourceForCropping.height
+    );
+    croppedCanvas = c;
+  }
+
+  // 3. COMPOSIZIONE FINALE
+  const size = 512;
+  const finalCanvas = document.createElement('canvas');
+  finalCanvas.width = size;
+  finalCanvas.height = size;
+  const fCtx = finalCanvas.getContext('2d')!;
+  fCtx.imageSmoothingQuality = 'high';
+  fCtx.clearRect(0, 0, size, size);
+
+  const scaleFactor = Math.min((size * 0.9) / croppedCanvas.width, (size * 0.9) / croppedCanvas.height);
+  const w = croppedCanvas.width * scaleFactor;
+  const h = croppedCanvas.height * scaleFactor;
+  const x = (size - w) / 2;
+  const y = (size - h) / 2;
+
+  if (enableShadow) {
+    fCtx.save();
+    fCtx.translate(x + w / 2, y + h);
+    fCtx.scale(1, 0.3);
+    fCtx.transform(1, 0, -0.5, 1, 0, 0);
+    fCtx.filter = 'blur(10px)';
+    fCtx.fillStyle = 'rgba(0,0,0,0.4)';
+    fCtx.fillRect(-w / 2, -h / 5, w, h / 3);
+    fCtx.restore();
+  }
+
+  fCtx.drawImage(croppedCanvas, x, y, w, h);
+
+  const blob = await new Promise<Blob | null>(resolve => finalCanvas.toBlob(resolve, 'image/png'));
+  if (!blob) throw new Error("Impossibile generare l'immagine finale.");
+  return blob;
 };
 
 /**
@@ -668,6 +643,7 @@ const processAdvancedImage = async (originalBlobUrl, cropArea, enableAI, enableS
 // --- SEARCH MODAL (AGGIORNATO CON IMPORT PROGETTI) ---
 // --- SEARCH MODAL (FIX IMMAGINI ROTTE + ORDINE NUMERICO) ---
 const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = [] }) => {
+  useEscapeToClose(isOpen, onClose);
   const [query, setQuery] = useState(initialQuery);
   const [googleQuery, setGoogleQuery] = useState('');
   const [urlInput, setUrlInput] = useState('');
@@ -744,7 +720,7 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
 
   if (!isOpen) return null;
 
-  const searchArasaac = async (term) => {
+  const searchArasaac = async (term?: string) => {
     const q = term || query;
     if (!q) return;
     setLoading(true);
@@ -910,7 +886,7 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
                       </button>
                     )
                   })}
-                  {results.length === 0 && query && !loading && <p className="col-span-full text-center text-slate-400">Nessun risultato.</p>}
+                  {results.length === 0 && query && !loading && <p className="col-span-full text-center text-slate-500">Nessun risultato.</p>}
                 </div>
               )}
             </>
@@ -963,7 +939,7 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
                       </button>
                     ))}
                     {boards.filter(b => b.type === 'grid' || b.type === 'sequence').length === 0 && (
-                      <div className="text-center p-8 text-slate-400 border-2 border-dashed rounded-xl">Non hai ancora creato progetti di comunicazione.</div>
+                      <div className="text-center p-8 text-slate-500 border-2 border-dashed rounded-xl">Non hai ancora creato progetti di comunicazione.</div>
                     )}
                   </div>
                 </div>
@@ -1006,7 +982,7 @@ const SearchModal = ({ isOpen, onClose, onSelect, initialQuery = '', boards = []
                   <div className="flex-1 overflow-y-auto min-h-[300px]">
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
                       {(!viewItems || viewItems.length === 0) ? (
-                        <div className="col-span-full text-center text-slate-400 py-10">
+                        <div className="col-span-full text-center text-slate-500 py-10">
                           {selectedBoard ? "Caricamento immagini..." : "Pagina vuota."}
                         </div>
                       ) : (
@@ -1075,13 +1051,26 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
   const [removeBg, setRemoveBg] = useState(true);
   const [addShadow, setAddShadow] = useState(true);
+  const [edgeMode, setEdgeMode] = useState<EdgeMode>('normale');
   const [processing, setProcessing] = useState(false);
+  const [progress, setProgress] = useState<RmbgProgress | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  // Esc chiude l'editor, ma non a metà elaborazione: si perderebbe il lavoro.
+  useEscapeToClose(isOpen && !processing, onClose);
 
   // Reset
   useEffect(() => {
     setZoom(1);
     setCrop({ x: 0, y: 0 });
+    setAiError(null);
   }, [imageSrc]);
+
+  // Avviamo il download del modello appena l'editor si apre con l'AI attiva:
+  // quando l'utente preme "Salva" spesso e' gia' pronto.
+  useEffect(() => {
+    if (isOpen && removeBg) preloadRmbg();
+  }, [isOpen, removeBg]);
 
   const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
     setCroppedAreaPixels(croppedAreaPixels);
@@ -1091,17 +1080,43 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
 
   const handleSave = async () => {
     setProcessing(true);
+    setAiError(null);
+    setProgress(null);
     try {
-      const finalBlob = await processAdvancedImage(imageSrc, croppedAreaPixels, removeBg, addShadow);
+      let finalBlob: Blob;
+      try {
+        finalBlob = await processAdvancedImage(imageSrc, croppedAreaPixels, removeBg, addShadow, {
+          edgeMode,
+          onProgress: setProgress,
+        });
+      } catch (aiErr) {
+        if (!removeBg) throw aiErr;
+        // L'AI puo' fallire (memoria, GPU, rete al primo uso): salviamo comunque
+        // l'immagine ritagliata invece di far perdere il lavoro all'utente.
+        console.error('Rimozione sfondo fallita, salvo senza AI:', aiErr);
+        setAiError((aiErr as Error)?.message || 'Motore AI non disponibile');
+        finalBlob = await processAdvancedImage(imageSrc, croppedAreaPixels, false, addShadow);
+      }
       onSave(finalBlob);
       onClose();
     } catch (e) {
       console.error(e);
-      alert("Errore elaborazione: " + e.message);
+      setAiError("Errore elaborazione: " + (e as Error).message);
     } finally {
       setProcessing(false);
+      setProgress(null);
     }
   };
+
+  const progressLabel = !progress
+    ? 'Elaborazione...'
+    : progress.phase === 'download'
+      ? `Scarico il modello AI${progress.progress != null ? ` ${Math.round(progress.progress * 100)}%` : '...'}`
+      : progress.phase === 'init'
+        ? 'Avvio motore AI...'
+        : progress.phase === 'infer'
+          ? 'Ritaglio del soggetto...'
+          : 'Elaborazione...';
 
   return (
     <div className="fixed inset-0 z-[110] bg-black/90 flex items-center justify-center p-0 md:p-4 animate-in fade-in">
@@ -1142,7 +1157,7 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
           <div className="space-y-2">
             <div className="flex justify-between px-1">
               <label className="text-xs font-bold uppercase text-slate-500">Zoom</label>
-              <span className="text-xs text-slate-400">{Math.round(zoom * 100)}%</span>
+              <span className="text-xs text-slate-500">{Math.round(zoom * 100)}%</span>
             </div>
             <input type="range" value={zoom} min={0.5} max={3} step={0.1} onChange={(e) => setZoom(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
           </div>
@@ -1152,7 +1167,29 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
               <input type="checkbox" checked={removeBg} onChange={() => setRemoveBg(!removeBg)} className="w-5 h-5 mt-1 text-blue-600 rounded focus:ring-blue-500" />
               <div className="flex-1">
                 <div className="font-bold text-sm flex items-center gap-2 text-slate-900 dark:text-white"><Wand2 className="w-4 h-4 text-blue-500" /> Rimuovi Sfondo (AI)</div>
-                {removeBg && <div className="mt-2 text-[11px] leading-tight p-2 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700 rounded-lg flex gap-2"><span className="text-base">⚡</span><div><strong>Elaborazione su dispositivo:</strong> Sfrutta la potenza del tuo processore.</div></div>}
+                {removeBg && (
+                  <>
+                    <div className="mt-2 text-[11px] leading-tight p-2 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700 rounded-lg flex gap-2">
+                      <span className="text-base">⚡</span>
+                      <div><strong>Elaborazione sul dispositivo:</strong> nessuna immagine lascia il tablet. Il primo utilizzo scarica il modello (~44 MB), poi funziona anche offline.</div>
+                    </div>
+                    <div className="mt-3" onClick={(e) => e.preventDefault()}>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Rifinitura bordi</span>
+                      <div className="mt-1 grid grid-cols-3 gap-1 rounded-lg bg-slate-100 dark:bg-slate-900 p-1">
+                        {(['morbido', 'normale', 'netto'] as EdgeMode[]).map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEdgeMode(m); }}
+                            className={`px-2 py-1.5 rounded-md text-xs font-bold capitalize transition-colors ${edgeMode === m ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                          >
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </label>
             <label className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${addShadow ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-200 dark:border-slate-700'}`}>
@@ -1163,11 +1200,108 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
         </div>
 
         {/* FOOTER */}
-        <div className="p-4 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-900 flex justify-end gap-3 shrink-0 z-20 pb-8 md:pb-4">
-          <button onClick={onClose} disabled={processing} className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-lg">Annulla</button>
-          <button onClick={handleSave} disabled={processing} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg">{processing ? "Elaborazione..." : "Salva"}</button>
+        <div className="p-4 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-900 shrink-0 z-20 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          {aiError && (
+            <p role="alert" className="mb-3 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg p-2">
+              Sfondo non rimosso ({aiError}). L'immagine è stata salvata comunque.
+            </p>
+          )}
+          {processing && (
+            <div className="mb-3" aria-live="polite">
+              <div className="flex justify-between text-xs font-bold text-slate-500 mb-1">
+                <span>{progressLabel}</span>
+                {progress?.progress != null && <span>{Math.round(progress.progress * 100)}%</span>}
+              </div>
+              <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                <div
+                  className={`h-full rounded-full bg-blue-600 transition-[width] duration-200 ${progress?.progress == null ? 'animate-pulse w-full' : ''}`}
+                  style={progress?.progress != null ? { width: `${Math.round(progress.progress * 100)}%` } : undefined}
+                />
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end gap-3">
+            <button onClick={onClose} disabled={processing} className="px-4 py-3 min-h-[44px] text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg disabled:opacity-50">Annulla</button>
+            <button onClick={handleSave} disabled={processing} className="px-6 py-3 min-h-[44px] bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg">{processing ? progressLabel : "Salva"}</button>
+          </div>
         </div>
       </div>
+    </div>
+  );
+};
+
+// --- CONTROLLI VOCE ---
+// Voce e velocità sono preferenze del dispositivo (non del singolo progetto):
+// un logopedista che usa lo stesso tablet con più bambini le imposta una volta.
+const VoiceControls = ({ enabled, onToggle }) => {
+  const [open, setOpen] = useState(false);
+  const [voices, setVoices] = useState<VoiceOption[]>([]);
+  const [voiceUri, setVoiceUri] = useState<string>(() => getPreferredVoice() || '');
+  const [rate, setRateState] = useState<number>(() => getRate());
+  const supported = isSpeechSupported();
+
+  useEffect(() => {
+    if (open && supported && voices.length === 0) listVoices().then(setVoices);
+  }, [open, supported, voices.length]);
+
+  if (!supported) return null;
+
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 rounded-lg p-1">
+        <button
+          onClick={onToggle}
+          aria-pressed={enabled}
+          title={enabled ? 'Voce attiva: tocca per disattivare' : 'Voce disattivata: tocca per attivare'}
+          className={`flex items-center gap-2 px-3 py-2 min-h-touch rounded-md text-sm font-bold transition-colors ${enabled ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+        >
+          <Volume2 className="w-4 h-4" /> Voce
+        </button>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          aria-label="Impostazioni della voce"
+          aria-expanded={open}
+          className="p-2 min-h-touch min-w-touch flex items-center justify-center rounded-md text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700"
+        >
+          <Settings className="w-4 h-4" />
+        </button>
+      </div>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-2 z-50 w-64 p-4 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 space-y-4">
+          <div>
+            <label htmlFor="voce-select" className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Voce</label>
+            <select
+              id="voce-select"
+              value={voiceUri}
+              onChange={(e) => { setVoiceUri(e.target.value); setPreferredVoice(e.target.value || null); }}
+              className="w-full px-2 py-2 min-h-touch rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white text-sm"
+            >
+              <option value="">Voce predefinita del dispositivo</option>
+              {voices.map((v) => (<option key={v.uri} value={v.uri}>{v.name} ({v.lang})</option>))}
+            </select>
+            {voices.length === 0 && <p className="mt-1 text-[11px] text-slate-500">Nessuna voce italiana trovata: verrà usata quella di sistema.</p>}
+          </div>
+          <div>
+            <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              <label htmlFor="voce-velocita">Velocità</label>
+              <span>{rate.toFixed(2)}×</span>
+            </div>
+            <input
+              id="voce-velocita"
+              type="range" min={0.5} max={1.5} step={0.05} value={rate}
+              onChange={(e) => { const r = Number(e.target.value); setRateState(r); setRate(r); }}
+              className="w-full accent-blue-600"
+            />
+          </div>
+          <button
+            onClick={() => speak('Ciao, questa è la voce scelta.')}
+            className="w-full px-3 py-2 min-h-touch rounded-lg bg-blue-600 text-white text-sm font-bold hover:bg-blue-700"
+          >
+            Prova la voce
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -1176,16 +1310,15 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
 const PictogramCard = ({
   item,
   onRemove,
-  onToggleComplete,
   onEditLabel,
   onReplaceImage,
   mode,
-  orientation,
   isLocked,
-  // Nuove props per l'interazione
   isActive,
-  onClick
-}) => {
+  onClick,
+  onToggleComplete = undefined,
+  orientation = undefined,
+}: any) => {
   const [isEditing, setIsEditing] = useState(false);
   const [tempLabel, setTempLabel] = useState(item.label);
 
@@ -1258,7 +1391,7 @@ const PictogramCard = ({
         {isEditing && !isLocked && onEditLabel ? (
           <input type="text" value={tempLabel} onClick={(e) => e.stopPropagation()} onChange={(e) => setTempLabel(e.target.value)} onBlur={saveLabel} onKeyDown={(e) => e.key === 'Enter' && saveLabel()} className="w-full text-sm font-bold bg-blue-50 dark:bg-slate-600 rounded px-1 outline-none border border-blue-300" autoFocus />
         ) : (
-          <p onClick={(e) => { if (!isLocked && onEditLabel) { e.stopPropagation(); setIsEditing(true); } }} className={`font-bold uppercase tracking-wide truncate ${!isLocked && onEditLabel ? 'cursor-text hover:text-blue-600 dark:hover:text-blue-400' : ''} ${item.completed ? 'line-through decoration-2 text-slate-400' : 'text-slate-800 dark:text-slate-200'} ${isVerticalSequence ? 'text-xl' : 'text-sm md:text-base'}`}>{item.label}</p>
+          <p onClick={(e) => { if (!isLocked && onEditLabel) { e.stopPropagation(); setIsEditing(true); } }} className={`font-bold uppercase tracking-wide truncate ${!isLocked && onEditLabel ? 'cursor-text hover:text-blue-600 dark:hover:text-blue-400' : ''} ${item.completed ? 'line-through decoration-2 text-slate-500' : 'text-slate-800 dark:text-slate-200'} ${isVerticalSequence ? 'text-xl' : 'text-sm md:text-base'}`}>{item.label}</p>
         )}
       </div>
     </div>
@@ -1268,6 +1401,7 @@ const PictogramCard = ({
 // --- HELP MODAL COMPONENT ---
 // --- HELP MODAL COMPONENT (COMPLETO CON ISTRUZIONI TIMER) ---
 const HelpModal = ({ isOpen, onClose }) => {
+  useEscapeToClose(isOpen, onClose);
   if (!isOpen) return null;
 
   return (
@@ -1401,10 +1535,52 @@ const HelpModal = ({ isOpen, onClose }) => {
             </div>
           </section>
 
-          {/* 3. RICERCA E AGGIUNTA VELOCE */}
+          {/* 2-bis. VOCE E STRISCIA DI FRASE */}
           <section>
             <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-4 border-b pb-2 dark:border-slate-700">
-              3. Ricerca Immagini & Trucchi
+              3. Voce e Striscia di Frase
+            </h4>
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800 space-y-3">
+              <p className="text-sm text-slate-700 dark:text-slate-300">
+                Con la <strong>modalità bambino attiva</strong> (lucchetto chiuso), toccare un simbolo lo fa
+                pronunciare ad alta voce. Nei comunicatori a griglia i simboli toccati si accodano anche nella
+                <strong> striscia di frase</strong> in alto: il tasto <Volume2 className="w-4 h-4 inline mx-0.5" /> legge
+                l'intera frase costruita.
+              </p>
+              <ul className="text-sm space-y-2 text-slate-600 dark:text-slate-300 list-disc pl-4">
+                <li><strong>Attivare o spegnere la voce:</strong> pulsante "Voce" nella barra degli strumenti (visibile in modalità modifica).</li>
+                <li><strong>Scegliere voce e velocità:</strong> icona ingranaggio accanto a "Voce". Una velocità più bassa (0,7–0,9×) aiuta la comprensione.</li>
+                <li><strong>Correggere la frase:</strong> la freccia indietro toglie l'ultimo simbolo, il cestino svuota tutto.</li>
+              </ul>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                La sintesi vocale usa le voci già installate sul dispositivo e funziona anche senza connessione.
+                Su iPhone e iPad si possono scaricare voci italiane migliori da Impostazioni → Accessibilità → Contenuto pronunciato.
+              </p>
+            </div>
+          </section>
+
+          {/* 4. SFONDO AI */}
+          <section>
+            <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-4 border-b pb-2 dark:border-slate-700">
+              4. Ritagliare lo Sfondo dalle Foto (AI)
+            </h4>
+            <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-100 dark:border-purple-800 space-y-3">
+              <p className="text-sm text-slate-700 dark:text-slate-300">
+                Quando si carica una foto dalla galleria, l'editor propone <strong>Rimuovi Sfondo (AI)</strong>.
+                Il soggetto viene isolato e il risultato somiglia a un pittogramma, uniforme con i simboli ARASAAC.
+              </p>
+              <ul className="text-sm space-y-2 text-slate-600 dark:text-slate-300 list-disc pl-4">
+                <li><strong>Tutto sul dispositivo:</strong> nessuna foto viene inviata su internet. Al primo utilizzo l'app scarica il modello (circa 44 MB), poi funziona anche offline.</li>
+                <li><strong>Rifinitura bordi:</strong> <em>morbido</em> conserva capelli e contorni sfumati; <em>normale</em> va bene quasi sempre; <em>netto</em> elimina gli aloni sui contorni definiti.</li>
+                <li>Se il ritaglio non riesce, l'immagine viene comunque salvata senza rimozione dello sfondo.</li>
+              </ul>
+            </div>
+          </section>
+
+          {/* 5. RICERCA E AGGIUNTA VELOCE */}
+          <section>
+            <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-4 border-b pb-2 dark:border-slate-700">
+              5. Ricerca Immagini & Trucchi
             </h4>
 
             {/* Box Multi Selezione */}
@@ -1441,7 +1617,7 @@ const HelpModal = ({ isOpen, onClose }) => {
           {/* 4. TIMER VISIVO */}
           <section>
             <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-4 border-b pb-2 dark:border-slate-700">
-              4. Timer Visivo
+              6. Timer Visivo
             </h4>
             <div className="bg-cyan-50 dark:bg-cyan-900/20 p-4 rounded-xl border border-cyan-100 dark:border-cyan-800 space-y-3">
               <p className="text-sm text-slate-700 dark:text-slate-300">
@@ -1496,9 +1672,10 @@ const TimeInput = ({ value, onChange, onFocus, onBlur, label, type, onArrowClick
       {/* Freccia Su */}
       <button
         onClick={() => onArrowClick(type, 1)}
-        className="w-full h-6 flex items-center justify-center rounded-t-md bg-slate-100 hover:bg-blue-100 text-slate-400 hover:text-blue-600 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 active:bg-blue-200"
+        aria-label={type === 'min' ? 'Aumenta i minuti' : 'Aumenta i secondi'}
+        className="w-full h-9 flex items-center justify-center rounded-t-md bg-slate-100 dark:bg-slate-700 hover:bg-blue-100 text-slate-500 dark:text-slate-300 hover:text-blue-700 transition-colors active:bg-blue-200"
       >
-        <ChevronUp className="w-3 h-3" />
+        <ChevronUp className="w-4 h-4" />
       </button>
 
       {/* Campo Input (Ridotto font e width) */}
@@ -1510,7 +1687,7 @@ const TimeInput = ({ value, onChange, onFocus, onBlur, label, type, onArrowClick
           onFocus={onFocus}
           onChange={(e) => onChange(type, e.target.value)}
           onBlur={onBlur}
-          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLElement).blur(); }}
           className="w-full bg-transparent text-center text-xl md:text-3xl font-mono font-bold text-slate-700 dark:text-white outline-none appearance-none p-0 leading-none placeholder-slate-200"
           placeholder="00"
           autoComplete="off"
@@ -1522,9 +1699,10 @@ const TimeInput = ({ value, onChange, onFocus, onBlur, label, type, onArrowClick
       {/* Freccia Giù */}
       <button
         onClick={() => onArrowClick(type, -1)}
-        className="w-full h-6 flex items-center justify-center rounded-b-md bg-slate-100 hover:bg-blue-100 text-slate-400 hover:text-blue-600 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 active:bg-blue-200"
+        aria-label={type === 'min' ? 'Riduci i minuti' : 'Riduci i secondi'}
+        className="w-full h-9 flex items-center justify-center rounded-b-md bg-slate-100 dark:bg-slate-700 hover:bg-blue-100 text-slate-500 dark:text-slate-300 hover:text-blue-700 transition-colors active:bg-blue-200"
       >
-        <ChevronDown className="w-3 h-3" />
+        <ChevronDown className="w-4 h-4" />
       </button>
     </div>
   );
@@ -1533,19 +1711,23 @@ const TimeInput = ({ value, onChange, onFocus, onBlur, label, type, onArrowClick
 // --- ICONE E COMPONENTI SET TIMER MOUSE ---
 const CheeseWedge = ({ isEaten, isEating }: { isEaten: boolean, isEating: boolean }) => {
   if (isEaten) {
+    // Restano le briciole: il pezzo mangiato lascia una traccia del percorso
+    // già fatto, invece di svanire e basta.
     return (
-      <svg viewBox="0 0 100 100" className="w-1/2 h-1/2 opacity-30 drop-shadow-none">
-        <circle cx="30" cy="30" r="8" fill="#D1D5DB" />
-        <circle cx="70" cy="60" r="5" fill="#D1D5DB" />
-        <circle cx="40" cy="80" r="6" fill="#D1D5DB" />
+      <svg viewBox="0 0 100 100" className="w-1/2 h-1/2 opacity-40">
+        <circle cx="34" cy="42" r="6" fill="#D97706" opacity="0.45" />
+        <circle cx="62" cy="58" r="4" fill="#D97706" opacity="0.35" />
+        <circle cx="46" cy="70" r="5" fill="#D97706" opacity="0.4" />
       </svg>
     );
   }
   return (
     <svg
       viewBox="0 0 100 100"
-      className={`w-full h-full p-1 md:p-2 transition-all duration-300 ${isEating ? 'scale-90 animate-pulse drop-shadow-none -rotate-3' : 'scale-100 hover:scale-105 drop-shadow-md'}`}
+      className={`w-full h-full p-1 md:p-2 transition-all duration-500 ${isEating ? 'scale-[0.82] -rotate-6 opacity-80 drop-shadow-none' : 'scale-100 drop-shadow-md'}`}
     >
+      {/* Morso in corso: un boccone visibile sul bordo */}
+      {isEating && <circle cx="88" cy="42" r="14" fill="#fff" className="dark:fill-slate-800" />}
       <path d="M15 80 L85 80 Q95 80 95 70 L75 25 Q70 15 60 15 L20 25 Q10 25 10 35 Z" fill="#FBBF24" />
       <path d="M15 80 L85 80 Q95 80 95 70 L75 25 Q70 15 60 15 L20 25 Q10 25 10 35 Z" fill="none" stroke="#D97706" strokeWidth="4" />
       <circle cx="35" cy="50" r="8" fill="#D97706" opacity="0.6" />
@@ -1561,8 +1743,8 @@ const MouseCharacter = ({ isActive, facesLeft, isFinished }: { isActive: boolean
     return <div className="text-4xl md:text-6xl animate-bounce leading-none mt-2">🐭🎉</div>;
   }
   return (
-    <div className={`w-12 h-12 md:w-16 md:h-16 drop-shadow-xl transition-transform duration-700 ease-in-out origin-center ${facesLeft ? 'scale-x-[-1]' : 'scale-x-100'} ${isActive ? 'animate-bounce' : ''}`}>
-      <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
+    <div className={`w-12 h-12 md:w-16 md:h-16 drop-shadow-xl transition-transform duration-500 origin-center ${facesLeft ? 'scale-x-[-1]' : 'scale-x-100'}`}>
+      <svg viewBox="0 0 100 100" className={`w-full h-full overflow-visible ${isActive ? 'topo-mastica' : ''}`}>
         <path d="M 20 70 Q -10 90 0 40" fill="none" stroke="#FCA5A5" strokeWidth="5" strokeLinecap="round" className={isActive ? 'animate-pulse' : ''} />
         <ellipse cx="45" cy="70" rx="30" ry="20" fill="#9CA3AF" />
         <circle cx="70" cy="45" r="14" fill="#6B7280" />
@@ -1698,6 +1880,36 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
   const percentage = Math.min(100, (timeLeft / (settings.duration || 1)) * 100);
   const currentColor = getProgressColorHex(percentage);
 
+  // Tema attivo, con ricaduta sulla boccia liquida per i progetti salvati
+  // prima che i temi aggiuntivi esistessero.
+  const temaCorrente: TimerTheme = TIMER_THEMES.some((t) => t.id === settings.timerStyle)
+    ? (settings.timerStyle as TimerTheme)
+    : 'liquid';
+
+  const isFinished = timeLeft === 0 && (!isActive || settings.duration > 0);
+
+  const immagineTema = settings.timerImage
+    ? settings.timerImage.imageUrl
+      ? <img src={settings.timerImage.imageUrl} alt="" className="w-full h-full object-contain" />
+      : settings.timerImage.iconId
+        ? (() => {
+            const IconComp = getIconComponent(settings.timerImage.iconId);
+            const style = getPresetStyle(settings.timerImage.iconId);
+            return <IconComp className={`w-full h-full ${style.icon}`} />;
+          })()
+        : null
+    : null;
+
+  const propsTema = {
+    percentuale: percentage,
+    timeLeft,
+    isActive,
+    isFinished,
+    colore: currentColor,
+    immagine: immagineTema,
+    onSelectImage,
+  };
+
   return (
     <div className="flex flex-col items-center w-full max-w-4xl mx-auto p-0 animate-in fade-in">
       <audio ref={audioRef} preload="auto" />
@@ -1705,16 +1917,21 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
       {/* HEADER CONTROLLI COMPATTI */}
       <div className="w-full bg-white dark:bg-slate-800 p-3 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 mb-4 flex flex-col gap-3">
 
-        <div className="flex justify-between items-start gap-2">
+        <div className="flex flex-wrap justify-between items-start gap-2">
 
-          {/* STILE DEL TIMER (Nuovo Selettore) */}
-          <div className="flex bg-slate-100 dark:bg-slate-900 rounded-xl p-1 shrink-0">
-            <button onClick={() => onUpdateSettings('timerStyle', 'liquid')} className={`p-2 rounded-lg transition-all ${settings.timerStyle !== 'mouse' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-500' : 'text-slate-400 hover:text-slate-600'}`} title="Boccia Liquida">
-              <Timer className="w-4 h-4" />
-            </button>
-            <button onClick={() => onUpdateSettings('timerStyle', 'mouse')} className={`p-2 rounded-lg transition-all ${settings.timerStyle === 'mouse' ? 'bg-white dark:bg-slate-700 shadow-sm text-orange-500' : 'text-slate-400 hover:text-slate-600'}`} title="Topolino e Formaggio">
-              <Mouse className="w-4 h-4" />
-            </button>
+          {/* STILE DEL TIMER */}
+          <div className="flex flex-col gap-1 shrink-0">
+            <label htmlFor="timer-tema" className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Tema</label>
+            <select
+              id="timer-tema"
+              value={temaCorrente}
+              onChange={(e) => onUpdateSettings('timerStyle', e.target.value)}
+              className="px-3 py-2 min-h-touch rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white font-bold text-sm max-w-[13rem]"
+            >
+              {TIMER_THEMES.map((t) => (
+                <option key={t.id} value={t.id}>{t.label}</option>
+              ))}
+            </select>
           </div>
 
           {/* BOX SINISTRA: Input Tempo e Play */}
@@ -1727,17 +1944,17 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
               <button onClick={toggleTimer} className={`w-10 h-10 md:w-12 md:h-12 rounded-xl shadow-sm flex items-center justify-center transition-all active:scale-95 ${isActive ? 'bg-amber-100 text-amber-600' : isRinging ? 'bg-red-600 text-white animate-bounce' : 'bg-green-500 text-white'}`}>
                 {isRinging || isActive ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
               </button>
-              <button onClick={resetTimer} className="w-10 h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-600 rounded-xl flex items-center justify-center active:bg-slate-100">
+              <button onClick={resetTimer} className="w-10 h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-600 rounded-xl flex items-center justify-center active:bg-slate-100">
                 <ResetIcon className="w-5 h-5" />
               </button>
             </div>
           </div>
 
           {/* BOX DESTRA: Suoni e Preset Rapidi */}
-          <div className="flex-1 flex flex-col items-end gap-2">
-            <div className="w-full flex items-center gap-1 bg-white dark:bg-slate-800 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm relative">
-              <Volume2 className="w-3 h-3 text-slate-400 shrink-0 ml-1" />
-              <select value={settings.soundId || 'digital'} onChange={(e) => onUpdateSettings('soundId', e.target.value)} className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer py-1 w-full text-right truncate">
+          <div className="w-full sm:flex-1 sm:w-auto min-w-0 flex flex-col items-stretch sm:items-end gap-2">
+            <div className="w-full min-w-0 flex items-center gap-1 bg-white dark:bg-slate-800 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm relative">
+              <Volume2 className="w-4 h-4 text-slate-500 shrink-0 ml-1" />
+              <select aria-label="Suono di fine timer" value={settings.soundId || 'digital'} onChange={(e) => onUpdateSettings('soundId', e.target.value)} className="min-w-0 bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer py-2 w-full text-right truncate">
                 <optgroup label="Predefiniti">
                   {TIMER_SOUNDS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                 </optgroup>
@@ -1748,7 +1965,8 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
                 )}
               </select>
               <button
-                className="ml-1 p-1 bg-blue-100 text-blue-600 rounded flex-shrink-0 hover:bg-blue-600 hover:text-white transition-colors"
+                className="ml-1 p-2 min-h-touch min-w-touch flex items-center justify-center bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-lg flex-shrink-0 hover:bg-blue-600 hover:text-white transition-colors"
+                aria-label="Aggiungi un suono personalizzato"
                 title="Aggiungi suono (mp3/ogg/wav)"
                 onClick={() => {
                   const input = document.createElement('input');
@@ -1769,8 +1987,8 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
             </div>
 
             <div className="flex w-full gap-1">
-              <button onClick={() => manualUpdateTime(Math.max(0, timeLeft - 10))} className="flex-1 py-2 bg-red-50 text-red-600 rounded-lg text-[10px] font-bold border border-red-100 hover:bg-red-100 active:scale-95 transition-all">-10s</button>
-              <button onClick={() => manualUpdateTime(timeLeft + 10)} className="flex-1 py-2 bg-green-50 text-green-600 rounded-lg text-[10px] font-bold border border-green-100 hover:bg-green-100 active:scale-95 transition-all">+10s</button>
+              <button onClick={() => manualUpdateTime(Math.max(0, timeLeft - 10))} className="flex-1 py-2 min-h-touch bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg text-xs font-bold border border-red-200 dark:border-red-800 hover:bg-red-100 active:scale-95 transition-all">-10s</button>
+              <button onClick={() => manualUpdateTime(timeLeft + 10)} className="flex-1 py-2 min-h-touch bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg text-xs font-bold border border-green-200 dark:border-green-800 hover:bg-green-100 active:scale-95 transition-all">+10s</button>
             </div>
           </div>
         </div>
@@ -1780,19 +1998,19 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
           <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide w-full touch-pan-x">
             {presets.map(p => (
               <div key={p} className="relative group shrink-0">
-                <button onClick={() => { stopAudio(); setIsActive(false); manualUpdateTime(p); }} className="px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white transition-all min-w-[50px]">
+                <button onClick={() => { stopAudio(); setIsActive(false); manualUpdateTime(p); }} className="px-3 py-2 min-h-touch bg-slate-100 dark:bg-slate-700 rounded-lg text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-600 hover:text-white transition-all min-w-[56px]">
                   {Math.floor(p / 60)}:{(p % 60).toString().padStart(2, '0')}
                 </button>
-                <button onClick={() => onUpdateSettings('presets', presets.filter(val => val !== p))} className="absolute -top-1.5 -right-1.5 bg-white text-red-500 border border-red-100 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm z-10"><X className="w-3 h-3" /></button>
+                <button onClick={() => onUpdateSettings('presets', presets.filter(val => val !== p))} aria-label={`Rimuovi preset ${Math.floor(p / 60)}:${(p % 60).toString().padStart(2, '0')}`} className="absolute -top-2 -right-2 bg-white dark:bg-slate-800 text-red-600 border border-red-200 rounded-full p-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity shadow-sm z-10"><X className="w-3 h-3" /></button>
               </div>
             ))}
             <div className="w-px h-6 bg-slate-200 mx-1 shrink-0"></div>
 
-            <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 p-1 rounded-lg border border-slate-200 shrink-0">
-              <input type="number" placeholder="M" value={newMin} onChange={(e) => setNewMin(e.target.value)} className="w-6 bg-transparent text-center font-bold outline-none text-xs" />
-              <span className="text-slate-300 text-xs">:</span>
-              <input type="number" placeholder="S" value={newSec} onChange={(e) => setNewSec(e.target.value)} className="w-6 bg-transparent text-center font-bold outline-none text-xs" />
-              <button onClick={addPreset} className="p-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-600 hover:text-white transition-colors"><Plus className="w-3 h-3" /></button>
+            <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 p-1 rounded-lg border border-slate-200 dark:border-slate-700 shrink-0">
+              <input type="number" min="0" aria-label="Minuti del nuovo preset" placeholder="M" value={newMin} onChange={(e) => setNewMin(e.target.value)} className="w-9 py-2 bg-transparent text-center font-bold outline-none text-sm dark:text-white" />
+              <span className="text-slate-500 text-sm">:</span>
+              <input type="number" min="0" max="59" aria-label="Secondi del nuovo preset" placeholder="S" value={newSec} onChange={(e) => setNewSec(e.target.value)} className="w-9 py-2 bg-transparent text-center font-bold outline-none text-sm dark:text-white" />
+              <button onClick={addPreset} aria-label="Aggiungi preset" className="p-2 min-h-touch min-w-touch flex items-center justify-center bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-600 hover:text-white transition-colors"><Plus className="w-4 h-4" /></button>
             </div>
           </div>
         </div>
@@ -1800,10 +2018,9 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
 
       {/* RENDER STILE TIMER */}
       {/* RENDER STILE TIMER */}
-      {settings.timerStyle === 'mouse' ? (() => {
+      {temaCorrente === 'mouse' ? (() => {
         const totalCheese = 20;
         const cols = 5;
-        const isFinished = timeLeft === 0 && (!isActive || settings.duration > 0);
         const progressNorm = isFinished ? 1 : 1 - (timeLeft / Math.max(1, settings.duration));
         const currentIdx = Math.min(totalCheese - 1, Math.floor(progressNorm * totalCheese));
 
@@ -1839,6 +2056,16 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
                   <div className="text-center text-slate-300 dark:text-slate-600"><ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50" /><span className="text-xs font-bold uppercase tracking-widest text-center">Tocca img finale</span></div>
                 )}
               </div>
+
+              {/* Percorso: mostra dove andrà il topo. Prima l'ordine a
+                  serpentina era invisibile e i salti sembravano casuali. */}
+              <svg className="absolute inset-0 z-[5] w-full h-full pointer-events-none" viewBox="0 0 100 80" preserveAspectRatio="none" aria-hidden="true">
+                <path
+                  d="M 10 10 H 90 M 90 10 V 30 M 90 30 H 10 M 10 30 V 50 M 10 50 H 90 M 90 50 V 70 M 90 70 H 10"
+                  fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 3"
+                  className="text-amber-300 dark:text-slate-600"
+                />
+              </svg>
 
               {/* Grid Layer */}
               <div className="absolute inset-0 z-10 grid grid-cols-5 grid-rows-4 p-1 md:p-2 gap-1 md:gap-2">
@@ -1886,8 +2113,8 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
             )}
           </div>
         );
-      })() : (
-        /* BOCCIA LIQUIDA RIDOTTA (w-56 mobile / w-96 desktop) */
+      })() : temaCorrente === 'liquid' ? (
+        /* BOCCIA LIQUIDA */
         <div
           className="relative mt-4 w-56 h-56 md:w-96 md:h-96 rounded-full border-[10px] md:border-[12px] border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden flex items-center justify-center transition-all duration-700 bg-white dark:bg-slate-900 mx-auto"
           style={{ backgroundColor: getBackgroundColor() }}
@@ -1902,16 +2129,40 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
             )}
           </div>
 
-          {/* 2. Liquido e Onde SVG (Doppio ciclo per loop perfetto) */}
+          {/* 2. Liquido e onde SVG (doppio ciclo per un loop continuo) */}
           <div className="liquid-container" style={{ height: `${percentage}%`, backgroundColor: currentColor }}>
-            {percentage > 0.5 && percentage < 99.5 && (
-              <div className="wave-wrapper" style={{ color: currentColor, marginBottom: '-1px' }}>
+            {/* Le onde restano sempre: prima sparivano di colpo vicino agli
+                estremi, e il livello sembrava saltare. Vicino al pieno e al
+                vuoto si appiattiscono invece di scomparire. */}
+            {percentage > 0.2 && (
+              <div
+                className="wave-wrapper"
+                style={{
+                  color: currentColor,
+                  marginBottom: '-1px',
+                  transform: `scaleY(${Math.max(0.15, Math.min(1, percentage / 12, (100 - percentage) / 12))})`,
+                  transformOrigin: 'bottom',
+                }}
+              >
+                <svg className="wave-svg wave-deep" viewBox="0 0 2000 100" preserveAspectRatio="none">
+                  <path d="M 0 100 V 55 Q 200 25 400 55 T 800 55 T 1200 55 T 1600 55 T 2000 55 V 100 H 0 Z" fill="currentColor" />
+                </svg>
                 <svg className="wave-svg wave-back" viewBox="0 0 2000 100" preserveAspectRatio="none">
                   <path d="M 0 100 V 50 Q 250 10 500 50 T 1000 50 T 1500 50 T 2000 50 V 100 H 0 Z" fill="currentColor" />
                 </svg>
                 <svg className="wave-svg wave-front" viewBox="0 0 2000 100" preserveAspectRatio="none">
                   <path d="M 0 100 V 50 Q 250 10 500 50 T 1000 50 T 1500 50 T 2000 50 V 100 H 0 Z" fill="currentColor" />
                 </svg>
+              </div>
+            )}
+
+            {/* Bollicine: segnalano che il tempo sta scorrendo anche quando il
+                livello si muove troppo lentamente per accorgersene. */}
+            {isActive && percentage > 6 && (
+              <div className="bolle" aria-hidden="true">
+                {[12, 34, 56, 74, 88].map((sinistra, i) => (
+                  <span key={sinistra} className="bolla" style={{ left: `${sinistra}%`, animationDelay: `${i * 1.1}s`, animationDuration: `${4 + (i % 3)}s` }} />
+                ))}
               </div>
             )}
           </div>
@@ -1923,14 +2174,71 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
             </div>
           )}
         </div>
+      ) : temaCorrente === 'disc' ? (
+        <DiscoTimer {...propsTema} />
+      ) : temaCorrente === 'sand' ? (
+        <ClessidraTimer {...propsTema} />
+      ) : temaCorrente === 'battery' ? (
+        <BatteriaTimer {...propsTema} />
+      ) : temaCorrente === 'rocket' ? (
+        <RazzoTimer {...propsTema} />
+      ) : (
+        <TortaTimer {...propsTema} />
+      )}
+
+      {/* Avvio: i temi senza sovrapposizione propria hanno bisogno di un comando */}
+      {temaCorrente !== 'mouse' && !isActive && !isFinished && timeLeft > 0 && (
+        <button
+          onClick={toggleTimer}
+          className="mt-4 flex items-center gap-2 px-6 py-3 min-h-touch rounded-full bg-green-600 text-white font-bold shadow-lg hover:bg-green-700 active:scale-95 transition-all"
+        >
+          <Play className="w-5 h-5 fill-current" /> Avvia
+        </button>
       )}
     </div>
   );
 };
 
 // --- APP COMPONENT ---
+/**
+ * Riduce in scala il foglio A4 del generatore PECS quando lo schermo è più
+ * stretto di 21 cm, così su telefono si vede tutta la pagina invece di dover
+ * scorrere in orizzontale. In stampa la scala torna a 1.
+ */
+const PX_PER_CM = 96 / 2.54;
+const A4_WIDTH_CM = 21;
+
+function useFitToWidth(enabled: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    if (!enabled) { setScale(1); return; }
+    const el = ref.current;
+    if (!el) return;
+
+    const measure = () => {
+      const available = el.clientWidth;
+      if (!available) return;
+      setScale(Math.min(1, available / (A4_WIDTH_CM * PX_PER_CM)));
+    };
+    measure();
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [enabled]);
+
+  return { ref, scale };
+}
+
 export default function App() {
-  const [darkMode, setDarkMode] = useState(false);
+  // Il tema è già applicato da uno script in index.html prima del primo paint:
+  // qui leggiamo lo stesso valore per restare allineati.
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof document === 'undefined') return false;
+    return document.documentElement.classList.contains('dark');
+  });
   const [view, setView] = useState('dashboard');
   const [boards, setBoards] = useState([]);
   const [dashboardSearch, setDashboardSearch] = useState('');
@@ -1949,22 +2257,62 @@ export default function App() {
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [activeItemId, setActiveItemId] = useState(null); // NUOVO STATO
   const [dropIndicator, setDropIndicator] = useState({ index: null, position: null }); // { index: 0, position: 'before' | 'after' }
-  const [customSounds, setCustomSounds] = useState<any[]>([]); // Soni custom in memoria
+  const [customSounds, setCustomSounds] = useState<any[]>([]); // Suoni custom in memoria
+
+  // --- COMUNICAZIONE VOCALE ---
+  // La striscia di frase è il cuore di un ausilio CAA: il bambino tocca i
+  // simboli, questi si accodano in alto e l'app pronuncia la frase intera.
+  const [voiceEnabled, setVoiceEnabled] = useState(() => {
+    try { return localStorage.getItem('caa_voice_enabled') !== 'false'; } catch { return true; }
+  });
+  const [sentence, setSentence] = useState<any[]>([]);
+  const speechAvailable = isSpeechSupported();
+
+  useEffect(() => {
+    try { localStorage.setItem('caa_voice_enabled', String(voiceEnabled)); } catch { /* storage pieno */ }
+  }, [voiceEnabled]);
+
+  useEffect(() => { primeSpeech(); }, []);
+
+  // Uscendo dalla modalità bambino la striscia si azzera e la voce tace.
+  useEffect(() => {
+    if (!isLocked) {
+      setSentence([]);
+      stopSpeaking();
+    }
+  }, [isLocked]);
 
   const handleChildClick = (itemId) => {
     setActiveItemId(itemId);
-    // Opzionale: Rimuovi l'evidenziazione dopo 2 secondi
     setTimeout(() => setActiveItemId(null), 2000);
+
+    const item = getActiveItems().find((i) => i.id === itemId);
+    if (!item) return;
+
+    if (voiceEnabled && item.label) speak(item.label);
+
+    // La striscia ha senso solo sulle griglie di comunicazione: sulle agende
+    // l'ordine è già dato dalla sequenza.
+    if (currentBoard?.type === 'grid') {
+      setSentence((prev) => [...prev, { key: crypto.randomUUID(), ...item }]);
+    }
+  };
+
+  const speakSentence = () => {
+    const text = sentence.map((i) => i.label).filter(Boolean).join(' ');
+    if (text) speak(text);
   };
 
   useEffect(() => {
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) setDarkMode(true);
     loadBoards();
   }, []);
 
+  // La scelta del tema va ricordata: prima si riazzerava ad ogni avvio.
   useEffect(() => {
-    if (darkMode) document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
+    document.documentElement.classList.toggle('dark', darkMode);
+    try {
+      localStorage.setItem('caa_dark_mode', String(darkMode));
+    } catch { /* modalità privata o storage pieno: pazienza */ }
   }, [darkMode]);
 
   useEffect(() => {
@@ -2070,7 +2418,7 @@ export default function App() {
         // Salviamo solo i metadati, le immagini Blob non si possono salvare in localStorage.
         // Ma va bene così! Al ripristino useremo gli ID per ricaricarle dal DB.
         localStorage.setItem('caa_snapshot_board', JSON.stringify(currentBoard));
-        localStorage.setItem('caa_snapshot_page', activePageIndex);
+        localStorage.setItem('caa_snapshot_page', String(activePageIndex));
         localStorage.setItem('caa_snapshot_view', view);
         localStorage.setItem('caa_snapshot_date', new Date().toISOString());
       }, 1000);
@@ -2087,8 +2435,8 @@ export default function App() {
       if (savedBoard) {
         try {
           const parsedBoard = JSON.parse(savedBoard);
-          const savedDate = new Date(localStorage.getItem('caa_snapshot_date'));
-          const diffMins = (new Date() - savedDate) / 1000 / 60;
+          const savedDate = new Date(localStorage.getItem('caa_snapshot_date') || 0);
+          const diffMins = (Date.now() - savedDate.getTime()) / 1000 / 60;
 
           // Se lo snapshot è recente (meno di 24 ore) chiediamo, altrimenti ignoriamo
           if (diffMins < 1440) {
@@ -2353,9 +2701,9 @@ export default function App() {
   };
 
   // --- DRAG & DROP LOGIC (AGGIORNATA) ---
-  const dragItem = useRef();
-  const dragOverItem = useRef();
-  const dragOverPage = useRef(); // NUOVO: Serve per capire se siamo sopra una pagina
+  const dragItem = useRef<number | null>(null);
+  const dragOverItem = useRef<number | null>(null);
+  const dragOverPage = useRef<string | null>(null); // pagina sotto il cursore, se presente
 
   const handleDragStart = (e, position) => {
     dragItem.current = position;
@@ -2473,13 +2821,51 @@ export default function App() {
   };
 
   const activeItems = getActiveItems();
+  const { ref: pecsWrapRef, scale: pecsScale } = useFitToWidth(currentBoard?.type === 'pecs');
+
+  /**
+   * Testo sorgente della storia. I progetti creati con la versione precedente
+   * hanno solo le tessere: ricostruiamo il testo dalle etichette, così si
+   * aprono e si continuano a modificare senza perdere nulla.
+   */
+  const storyText = useMemo(() => {
+    if (currentBoard?.type !== 'story') return '';
+    if (typeof currentBoard.storyText === 'string') return currentBoard.storyText;
+    return (currentBoard.items || []).map((i: any) => i.label).filter(Boolean).join(' ');
+  }, [currentBoard]);
+
+  /**
+   * I simboli risolti vengono riversati in `items`: stampa, backup e
+   * sincronizzazione continuano a funzionare sulla struttura che già conoscono.
+   */
+  const handleStorySymbols = useCallback((simboli: SimboloRisolto[]) => {
+    setCurrentBoard((prev: any) => {
+      if (!prev || prev.type !== 'story') return prev;
+      const nuovi = simboli.map((s, i) => ({
+        id: `${s.chiave || 'vuoto'}-${i}`,
+        label: s.testo,
+        sourceId: s.sourceId,
+        imageUrl: s.imageUrl,
+        completed: false,
+      }));
+      // Evita un aggiornamento di stato (e quindi un salvataggio) se nulla è
+      // cambiato: senza questo controllo si entrerebbe in un ciclo di render.
+      const precedenti = prev.items || [];
+      const uguali =
+        precedenti.length === nuovi.length &&
+        precedenti.every((p: any, i: number) => p.label === nuovi[i].label && p.sourceId === nuovi[i].sourceId);
+      if (uguali) return prev;
+      return { ...prev, items: nuovi };
+    });
+  }, []);
+
 
   const filteredBoards = useMemo(() => {
     let result = [...boards];
     if (dashboardFilter !== 'all') result = result.filter(b => b.type === dashboardFilter);
     if (dashboardSearch.trim()) result = result.filter(b => b.title.toLowerCase().includes(dashboardSearch.toLowerCase()));
     result.sort((a, b) => {
-      const dateA = new Date(a.updatedAt), dateB = new Date(b.updatedAt);
+      const dateA = new Date(a.updatedAt).getTime(), dateB = new Date(b.updatedAt).getTime();
       if (dashboardSort === 'date-desc') return dateB - dateA;
       if (dashboardSort === 'date-asc') return dateA - dateB;
       if (dashboardSort === 'alpha') return a.title.localeCompare(b.title);
@@ -2535,6 +2921,19 @@ export default function App() {
         }
         .print\\:hidden { display: none !important; }
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+        /* L'anteprima PECS è rimpicciolita a schermo per stare nei telefoni:
+           in stampa deve tornare esattamente 1:1, altrimenti le tessere
+           non escono della misura in centimetri richiesta. */
+        .pecs-sheet {
+          transform: none !important;
+          width: 21cm !important;
+          height: 29.7cm !important;
+        }
+        .pecs-sheet-wrap {
+          height: auto !important;
+          overflow: visible !important;
+        }
       } /* <--- QUESTA CHIUSURA ERA MESSA NEL POSTO SBAGLIATO PRIMA */
 
       /* --- FIX INPUT NUMERICI (Nasconde frecce default) --- */
@@ -2600,6 +2999,48 @@ export default function App() {
         animation: wave-front 4s linear infinite;
         opacity: 1;
       }
+
+      /* Terza onda, più lenta e profonda: dà spessore al liquido. */
+      .wave-deep {
+        animation: wave-back 11s linear infinite;
+        opacity: 0.35;
+        transform: scaleY(1.15);
+      }
+
+      /* Masticazione: un dondolio breve, meno invadente del rimbalzo continuo. */
+      @keyframes mastica {
+        0%, 100% { transform: translateY(0) rotate(0deg); }
+        30%      { transform: translateY(-2px) rotate(-4deg); }
+        60%      { transform: translateY(1px) rotate(3deg); }
+      }
+      .topo-mastica {
+        animation: mastica 0.9s ease-in-out infinite;
+      }
+
+      /* --- BOLLICINE --- */
+      .bolle {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .bolla {
+        position: absolute;
+        bottom: -12%;
+        width: 8px;
+        height: 8px;
+        border-radius: 9999px;
+        background: rgba(255, 255, 255, 0.45);
+        animation-name: sali;
+        animation-timing-function: ease-in;
+        animation-iteration-count: infinite;
+      }
+      @keyframes sali {
+        0%   { transform: translateY(0) scale(0.6); opacity: 0; }
+        15%  { opacity: 0.7; }
+        85%  { opacity: 0.5; }
+        100% { transform: translateY(-320px) scale(1.1); opacity: 0; }
+      }
     `;
     document.head.appendChild(style);
     return () => {
@@ -2610,9 +3051,9 @@ export default function App() {
   return (
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-800'}`} onClick={() => setOpenMenuId(null)}>
 
-      <header className="print:hidden sticky top-0 z-40 w-full backdrop-blur-md bg-white/80 dark:bg-slate-900/80 border-b dark:border-slate-800 px-4 py-3 flex items-center justify-between shadow-sm">
+      <header className="print:hidden sticky top-0 z-40 w-full backdrop-blur-md bg-white/80 dark:bg-slate-900/80 border-b dark:border-slate-800 px-3 sm:px-4 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] flex items-center justify-between gap-2 shadow-sm">
         <div className="flex items-center gap-3">
-          {view === 'editor' && <button onClick={() => setView('dashboard')} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors"><ArrowLeft className="w-5 h-5" /></button>}
+          {view === 'editor' && <button onClick={() => setView('dashboard')} aria-label="Torna ai progetti" className="p-3 min-h-touch min-w-touch flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors"><ArrowLeft className="w-5 h-5" /></button>}
           <div className="flex items-center gap-2">
             <div className="bg-blue-600 p-1.5 rounded-lg text-white"><LayoutGrid className="w-5 h-5" /></div>
             <h1 className="text-xl font-bold tracking-tight hidden sm:block">CAA <span className="text-blue-600">Facile</span></h1>
@@ -2621,15 +3062,15 @@ export default function App() {
         <div className="flex items-center gap-2">
           {view === 'dashboard' && (
             <>
-              <button onClick={() => setShowHelp(true)} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors mr-1" title="Manuale Istruzioni">
+              <button onClick={() => setShowHelp(true)} className="p-3 min-h-touch min-w-touch flex items-center justify-center rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors" title="Manuale Istruzioni" aria-label="Manuale istruzioni">
                 <HelpCircle className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               </button>
               <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1"></div>
-              <button onClick={() => setShowSyncModal(true)} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-blue-600 dark:text-blue-400" title="Sincronizzazione e Backup"><Wifi className="w-5 h-5" /></button>
+              <button onClick={() => setShowSyncModal(true)} className="p-3 min-h-touch min-w-touch flex items-center justify-center rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-blue-600 dark:text-blue-400" title="Sincronizzazione e Backup" aria-label="Sincronizzazione e backup"><Wifi className="w-5 h-5" /></button>
             </>
           )}
-          {view === 'editor' && <button onClick={saveBoard} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all ${isSaving ? 'bg-green-500 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg'}`}><Save className="w-4 h-4" /> {isSaving ? 'Salvato!' : 'Salva'}</button>}
-          <button onClick={() => setDarkMode(!darkMode)} className="p-2.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">{darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}</button>
+          {view === 'editor' && <button onClick={saveBoard} className={`flex items-center gap-2 px-4 py-3 min-h-touch rounded-lg font-bold text-sm transition-all ${isSaving ? 'bg-green-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg'}`}><Save className="w-4 h-4" /> {isSaving ? 'Salvato!' : 'Salva'}</button>}
+          <button onClick={() => setDarkMode(!darkMode)} aria-label={darkMode ? 'Passa al tema chiaro' : 'Passa al tema scuro'} aria-pressed={darkMode} className="p-3 min-h-touch min-w-touch flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">{darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}</button>
         </div>
       </header>
 
@@ -2638,28 +3079,28 @@ export default function App() {
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <section className="text-center py-8 space-y-4">
               <h2 className="text-3xl font-extrabold text-slate-800 dark:text-white">Strumenti Clinici</h2>
-              <div className="flex flex-wrap justify-center gap-4 mt-6">
-                <button onClick={() => createBoard('grid')} className="group flex flex-col items-center p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border-2 border-slate-200 dark:border-slate-700 hover:border-blue-500 transition-all w-44">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mt-6 max-w-5xl mx-auto">
+                <button onClick={() => createBoard('grid')} className="group flex flex-col items-center p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border-2 border-slate-200 dark:border-slate-700 hover:border-blue-500 transition-all w-full min-h-touch focus-visible:border-blue-500">
                   <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl text-blue-600 mb-3 group-hover:scale-110 transition-transform"><LayoutGrid className="w-8 h-8" /></div>
                   <span className="font-bold text-slate-700 dark:text-slate-200">Comunicazione</span>
                 </button>
-                <button onClick={() => createBoard('sequence')} className="group flex flex-col items-center p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border-2 border-slate-200 dark:border-slate-700 hover:border-emerald-500 transition-all w-44">
+                <button onClick={() => createBoard('sequence')} className="group flex flex-col items-center p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border-2 border-slate-200 dark:border-slate-700 hover:border-emerald-500 transition-all w-full min-h-touch focus-visible:border-blue-500">
                   <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl text-emerald-600 mb-3 group-hover:scale-110 transition-transform"><ListOrdered className="w-8 h-8" /></div>
                   <span className="font-bold text-slate-700 dark:text-slate-200">Agenda Visiva</span>
                 </button>
-                <button onClick={() => createBoard('token')} className="group flex flex-col items-center p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border-2 border-slate-200 dark:border-slate-700 hover:border-amber-500 transition-all w-44">
+                <button onClick={() => createBoard('token')} className="group flex flex-col items-center p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border-2 border-slate-200 dark:border-slate-700 hover:border-amber-500 transition-all w-full min-h-touch focus-visible:border-blue-500">
                   <div className="p-3 bg-amber-100 dark:bg-amber-900/30 rounded-xl text-amber-600 mb-3 group-hover:scale-110 transition-transform"><Trophy className="w-8 h-8" /></div>
                   <span className="font-bold text-slate-700 dark:text-slate-200">Token Economy</span>
                 </button>
-                <button onClick={() => createBoard('story')} className="group flex flex-col items-center p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border-2 border-slate-200 dark:border-slate-700 hover:border-pink-500 transition-all w-44">
+                <button onClick={() => createBoard('story')} className="group flex flex-col items-center p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border-2 border-slate-200 dark:border-slate-700 hover:border-pink-500 transition-all w-full min-h-touch focus-visible:border-blue-500">
                   <div className="p-3 bg-pink-100 dark:bg-pink-900/30 rounded-xl text-pink-600 mb-3 group-hover:scale-110 transition-transform"><Book className="w-8 h-8" /></div>
                   <span className="font-bold text-slate-700 dark:text-slate-200">Storia Sociale</span>
                 </button>
-                <button onClick={() => createBoard('pecs')} className="group flex flex-col items-center p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border-2 border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-all w-44">
+                <button onClick={() => createBoard('pecs')} className="group flex flex-col items-center p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border-2 border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-all w-full min-h-touch focus-visible:border-blue-500">
                   <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl text-indigo-600 mb-3 group-hover:scale-110 transition-transform"><Scissors className="w-8 h-8" /></div>
                   <span className="font-bold text-slate-700 dark:text-slate-200">Costruttore PECS</span>
                 </button>
-                <button onClick={() => createBoard('timer')} className="group flex flex-col items-center p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border-2 border-slate-200 dark:border-slate-700 hover:border-cyan-500 transition-all w-44">
+                <button onClick={() => createBoard('timer')} className="group flex flex-col items-center p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border-2 border-slate-200 dark:border-slate-700 hover:border-cyan-500 transition-all w-full min-h-touch focus-visible:border-blue-500">
                   <div className="p-3 bg-cyan-100 dark:bg-cyan-900/30 rounded-xl text-cyan-600 mb-3 group-hover:scale-110 transition-transform"><Timer className="w-8 h-8" /></div>
                   <span className="font-bold text-slate-700 dark:text-slate-200">Timer Visivo</span>
                 </button>
@@ -2668,19 +3109,20 @@ export default function App() {
 
             <div className="sticky top-20 z-30 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-sm p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row gap-4 justify-between items-center shadow-sm">
               <div className="relative w-full md:w-auto md:min-w-[300px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input type="text" placeholder="Cerca i tuoi progetti..." value={dashboardSearch} onChange={(e) => setDashboardSearch(e.target.value)} className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input type="search" aria-label="Cerca fra i tuoi progetti" placeholder="Cerca i tuoi progetti..." value={dashboardSearch} onChange={(e) => setDashboardSearch(e.target.value)} className="w-full pl-10 pr-4 py-3 min-h-touch rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
-              <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
-                <select value={dashboardFilter} onChange={(e) => setDashboardFilter(e.target.value)} className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none cursor-pointer">
+              <div className="grid grid-cols-2 gap-2 w-full md:flex md:w-auto">
+                <select aria-label="Filtra per tipo di progetto" value={dashboardFilter} onChange={(e) => setDashboardFilter(e.target.value)} className="min-w-0 w-full md:w-auto px-3 py-3 min-h-touch rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none cursor-pointer">
                   <option value="all">Tutti i tipi</option>
                   <option value="grid">Comunicazione</option>
                   <option value="sequence">Agenda</option>
                   <option value="token">Token Economy</option>
                   <option value="story">Storie Sociali</option> {/* Nuovo */}
-                  <option value="pecs">PECS da Taglio</option> {/* Nuovo */}
+                  <option value="pecs">PECS da Taglio</option>
+                  <option value="timer">Timer Visivo</option>
                 </select>
-                <select value={dashboardSort} onChange={(e) => setDashboardSort(e.target.value)} className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none cursor-pointer">
+                <select aria-label="Ordina i progetti" value={dashboardSort} onChange={(e) => setDashboardSort(e.target.value)} className="min-w-0 w-full md:w-auto px-3 py-3 min-h-touch rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none cursor-pointer">
                   <option value="date-desc">Più recenti</option>
                   <option value="date-asc">Più vecchi</option>
                   <option value="alpha">Alfabetico (A-Z)</option>
@@ -2689,7 +3131,7 @@ export default function App() {
             </div>
 
             <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredBoards.length === 0 ? <div className="col-span-full text-center py-12 text-slate-400">Nessun progetto trovato.</div> : filteredBoards.map(board => (
+              {filteredBoards.length === 0 ? <div className="col-span-full text-center py-12 text-slate-500">Nessun progetto trovato.</div> : filteredBoards.map(board => (
                 <div key={board.id} onClick={() => openBoard(board.id)} className="group bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer flex flex-col overflow-hidden relative">
                   <div className={`h-32 w-full flex items-center justify-center relative bg-slate-100 dark:bg-slate-700/50 ${board.coverImage ? 'p-0' : 'p-4'}`}>
                     {board.coverImage && board.coverImage.iconId ? (
@@ -2701,19 +3143,19 @@ export default function App() {
                     ) : board.coverImage ? (
                       <img src={board.coverImage.imageUrl} alt="Cover" className="w-full h-full object-cover" />
                     ) : (
-                      <div className={`p-4 rounded-full ${board.type === 'sequence' ? 'bg-emerald-100 text-emerald-600' : board.type === 'token' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
-                        {board.type === 'sequence' ? <ListOrdered className="w-8 h-8" /> : board.type === 'token' ? <Trophy className="w-8 h-8" /> : <LayoutGrid className="w-8 h-8" />}
+                      <div className={`p-4 rounded-full ${BOARD_TYPE_COLORS[board.type] || 'bg-blue-100 text-blue-600'}`}>
+                        {(() => { const Fallback = BOARD_TYPE_ICONS[board.type] || LayoutGrid; return <Fallback className="w-8 h-8" />; })()}
                       </div>
                     )}
-                    <div className="absolute top-2 left-2 px-2 py-1 rounded-md bg-white/90 dark:bg-black/70 text-xs font-bold shadow-sm backdrop-blur-sm">{board.type === 'grid' ? 'Comunicazione' : board.type === 'sequence' ? 'Agenda' : 'Token'}</div>
+                    <div className="absolute top-2 left-2 px-2 py-1 rounded-md bg-white/90 dark:bg-black/70 text-xs font-bold shadow-sm backdrop-blur-sm">{BOARD_TYPE_LABELS[board.type] || 'Progetto'}</div>
                     <div className="absolute top-2 right-2">
-                      <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === board.id ? null : board.id); }} className="p-1.5 rounded-full bg-white/80 dark:bg-black/50 hover:bg-white text-slate-700 dark:text-white transition-colors"><MoreVertical className="w-4 h-4" /></button>
+                      <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === board.id ? null : board.id); }} aria-label={`Opzioni per ${board.title}`} aria-expanded={openMenuId === board.id} className="p-2.5 min-h-touch min-w-touch flex items-center justify-center rounded-full bg-white/80 dark:bg-black/60 hover:bg-white text-slate-700 dark:text-white transition-colors"><MoreVertical className="w-4 h-4" /></button>
                       {openMenuId === board.id && (
                         <div className="absolute right-0 top-8 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100 origin-top-right">
-                          <button onClick={(e) => handleChangeCover(e, board)} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"><ImageIcon className="w-4 h-4" /> Cambia Copertina</button>
-                          <button onClick={(e) => duplicateBoard(e, board)} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"><Copy className="w-4 h-4" /> Duplica</button>
+                          <button onClick={(e) => handleChangeCover(e, board)} className="w-full text-left px-4 py-3 min-h-touch text-sm hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"><ImageIcon className="w-4 h-4" /> Cambia Copertina</button>
+                          <button onClick={(e) => duplicateBoard(e, board)} className="w-full text-left px-4 py-3 min-h-touch text-sm hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"><Copy className="w-4 h-4" /> Duplica</button>
                           <div className="h-px bg-slate-100 dark:bg-slate-700 my-1"></div>
-                          <button onClick={(e) => deleteBoard(e, board.id)} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"><Trash2 className="w-4 h-4" /> Elimina</button>
+                          <button onClick={(e) => deleteBoard(e, board.id)} className="w-full text-left px-4 py-3 min-h-touch text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"><Trash2 className="w-4 h-4" /> Elimina</button>
                         </div>
                       )}
                     </div>
@@ -2730,11 +3172,69 @@ export default function App() {
 
         {view === 'editor' && currentBoard && (
           <div className="flex flex-col h-full gap-6 animate-in fade-in duration-300">
+            {/*
+              STRISCIA DI FRASE — visibile in modalità bambino sulle griglie di
+              comunicazione. Toccando i simboli si compone la frase, che l'app
+              può poi pronunciare per intero.
+            */}
+            {isLocked && currentBoard.type === 'grid' && (
+              <div className="print:hidden sticky top-[4.25rem] z-30 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm rounded-2xl border-2 border-slate-200 dark:border-slate-700 shadow-lg p-3 flex items-center gap-3">
+                <div className="flex-1 flex items-center gap-2 overflow-x-auto min-h-[72px] scrollbar-hide" aria-live="polite" aria-label="Frase composta">
+                  {sentence.length === 0 ? (
+                    <p className="text-sm text-slate-500 px-2">Tocca i simboli per comporre una frase…</p>
+                  ) : (
+                    sentence.map((item) => (
+                      <div key={item.key} className="shrink-0 w-16 flex flex-col items-center gap-1">
+                        <div className="w-14 h-14 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden">
+                          {item.iconId ? (() => {
+                            const IconComp = getIconComponent(item.iconId);
+                            const style = getPresetStyle(item.iconId);
+                            return <IconComp className={`w-8 h-8 ${style.icon}`} />;
+                          })() : item.imageUrl ? (
+                            <img src={item.imageUrl} alt="" className="max-w-full max-h-full object-contain" />
+                          ) : (
+                            <ImageIcon className="w-6 h-6 text-slate-300" />
+                          )}
+                        </div>
+                        <span className="text-[10px] font-bold uppercase truncate w-full text-center text-slate-600 dark:text-slate-300">{item.label}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={speakSentence}
+                    disabled={sentence.length === 0 || !speechAvailable}
+                    aria-label="Pronuncia la frase"
+                    title={speechAvailable ? 'Pronuncia la frase' : 'Sintesi vocale non disponibile su questo dispositivo'}
+                    className="p-3 min-h-touch min-w-touch flex items-center justify-center rounded-full bg-blue-600 text-white shadow-md hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 transition-colors"
+                  >
+                    <Volume2 className="w-6 h-6" />
+                  </button>
+                  <button
+                    onClick={() => setSentence((prev) => prev.slice(0, -1))}
+                    disabled={sentence.length === 0}
+                    aria-label="Cancella l'ultimo simbolo"
+                    className="p-3 min-h-touch min-w-touch flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 disabled:opacity-40 transition-colors"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => { setSentence([]); stopSpeaking(); }}
+                    disabled={sentence.length === 0}
+                    aria-label="Svuota la frase"
+                    className="p-3 min-h-touch min-w-touch flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-red-100 hover:text-red-600 disabled:opacity-40 transition-colors"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            )}
             <div className={`print:hidden flex flex-col gap-4 bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 transition-all ${isLocked ? 'opacity-90' : ''}`}>
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="w-full md:w-auto flex-1">
-                  {!isLocked && <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Titolo</label>}
-                  {isLocked ? <h2 className="text-2xl font-extrabold text-slate-800 dark:text-white">{currentBoard.title}</h2> : <input type="text" value={currentBoard.title} onChange={(e) => setCurrentBoard({ ...currentBoard, title: e.target.value })} className="text-2xl font-extrabold bg-transparent text-slate-800 dark:text-white outline-none w-full border-b border-transparent focus:border-blue-500" placeholder="Titolo..." />}
+                  {!isLocked && <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Titolo</label>}
+                  {isLocked ? <h2 className="text-2xl font-extrabold text-slate-800 dark:text-white">{currentBoard.title}</h2> : <input type="text" aria-label="Titolo del progetto" value={currentBoard.title} onChange={(e) => setCurrentBoard({ ...currentBoard, title: e.target.value })} className="text-2xl font-extrabold bg-transparent text-slate-800 dark:text-white outline-none w-full min-h-touch py-1 border-b border-transparent focus:border-blue-500" placeholder="Titolo..." />}
                 </div>
                 {!isLocked && (
                   <div className="flex flex-wrap gap-2 w-full md:w-auto items-center">
@@ -2743,22 +3243,27 @@ export default function App() {
                     )}
                     {currentBoard.type === 'token' && (
                       <div className="flex flex-wrap gap-3 items-center w-full md:w-auto p-2 bg-slate-50 dark:bg-slate-900 rounded-lg">
-                        <div className="flex items-center gap-2"><span className="text-sm font-bold text-slate-500">Punti:</span><input type="number" min="1" max="20" value={currentBoard.settings.tokenCount} onChange={(e) => updateTokenSettings('tokenCount', parseInt(e.target.value))} className="w-16 px-2 py-1 rounded border dark:bg-slate-700 dark:text-white" /></div>
+                        <div className="flex items-center gap-2"><span className="text-sm font-bold text-slate-500">Punti:</span><input type="number" min="1" max="20" aria-label="Numero di token da guadagnare" value={currentBoard.settings.tokenCount} onChange={(e) => { const n = parseInt(e.target.value, 10); updateTokenSettings('tokenCount', Number.isFinite(n) ? Math.min(20, Math.max(1, n)) : 1); }} className="w-16 px-2 py-2 min-h-touch rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white" /></div>
                         <div className="h-6 w-px bg-slate-300 dark:bg-slate-600"></div>
-                        <button onClick={() => { setEditingContext({ type: 'tokenImage' }); setShowSearch(true); }} className="flex items-center gap-1 text-sm text-blue-600 hover:underline"><Star className="w-4 h-4" /> Timbro</button>
-                        <button onClick={() => { setEditingContext({ type: 'rewardImage' }); setShowSearch(true); }} className="flex items-center gap-1 text-sm text-amber-600 hover:underline"><Trophy className="w-4 h-4" /> Premio</button>
+                        <button onClick={() => { setEditingContext({ type: 'tokenImage' }); setShowSearch(true); }} className="flex items-center gap-1.5 px-3 py-2 min-h-touch rounded-lg text-sm font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50"><Star className="w-4 h-4" /> Timbro</button>
+                        <button onClick={() => { setEditingContext({ type: 'rewardImage' }); setShowSearch(true); }} className="flex items-center gap-1.5 px-3 py-2 min-h-touch rounded-lg text-sm font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50"><Trophy className="w-4 h-4" /> Premio</button>
                         <div className="h-6 w-px bg-slate-300 dark:bg-slate-600"></div>
                         <div className="flex items-center gap-1">
-                          <select value={currentBoard.settings.linkedScheduleId || ''} onChange={(e) => updateTokenSettings('linkedScheduleId', e.target.value)} className="text-sm px-2 py-1 rounded border dark:bg-slate-700 dark:text-white max-w-[150px]">
+                          <select aria-label="Agenda collegata" value={currentBoard.settings.linkedScheduleId || ''} onChange={(e) => updateTokenSettings('linkedScheduleId', e.target.value)} className="text-sm px-2 py-2 min-h-touch rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white max-w-[150px]">
                             <option value="">Nessuna Agenda</option>
                             {boards.filter(b => b.type === 'sequence').map(b => (<option key={b.id} value={b.id}>{b.title}</option>))}
                           </select>
-                          <button onClick={createLinkedBoard} className="p-1.5 bg-green-100 text-green-700 hover:bg-green-200 rounded border border-green-200" title="Crea Nuova Agenda"><Plus className="w-4 h-4" /></button>
+                          <button onClick={createLinkedBoard} className="p-2.5 min-h-touch min-w-touch flex items-center justify-center bg-green-100 text-green-800 hover:bg-green-200 rounded-lg border border-green-300" title="Crea Nuova Agenda" aria-label="Crea nuova agenda collegata"><Plus className="w-4 h-4" /></button>
                         </div>
                       </div>
                     )}
-                    {currentBoard.type !== 'token' && (
-                      <button onClick={() => { setEditingContext(null); setShowSearch(true); }} className="bg-slate-900 dark:bg-blue-600 text-white px-5 py-3 rounded-xl font-bold shadow-lg hover:scale-105 transition-transform flex items-center justify-center gap-2"><Plus className="w-5 h-5" /> Aggiungi</button>
+                    {(currentBoard.type === 'grid' || currentBoard.type === 'sequence' || currentBoard.type === 'story') && (
+                      <VoiceControls enabled={voiceEnabled} onToggle={() => setVoiceEnabled((v) => !v)} />
+                    )}
+                    {/* Non serve nelle storie (i simboli nascono dal testo) né nei
+                        timer (l'immagine si sceglie toccando il timer stesso). */}
+                    {currentBoard.type !== 'token' && currentBoard.type !== 'story' && currentBoard.type !== 'timer' && (
+                      <button onClick={() => { setEditingContext(null); setShowSearch(true); }} className="bg-slate-900 dark:bg-blue-600 text-white px-5 py-3 min-h-touch rounded-xl font-bold shadow-lg hover:scale-105 transition-transform flex items-center justify-center gap-2"><Plus className="w-5 h-5" /> Aggiungi</button>
                     )}
                   </div>
                 )}
@@ -2797,7 +3302,7 @@ export default function App() {
 
                       {!isLocked && currentBoard.pages.length > 1 && activePageIndex === index && (
                         <button
-                          className="p-1 hover:bg-red-100 text-slate-400 hover:text-red-500 rounded-full transition-colors ml-2"
+                          className="p-1 hover:bg-red-100 text-slate-500 hover:text-red-500 rounded-full transition-colors ml-2"
                           onClick={(e) => {
                             e.stopPropagation();
                             if (confirm(`Eliminare la pagina "${page.name}" e tutti i suoi simboli?`)) {
@@ -2831,7 +3336,7 @@ export default function App() {
                           setTimeout(() => setActivePageIndex(currentBoard.pages.length), 50);
                         }
                       }}
-                      className="flex items-center gap-1 px-3 py-2 mb-1 ml-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      className="flex items-center gap-1 px-3 py-2 mb-1 ml-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                       title="Aggiungi nuova pagina vuota"
                     >
                       <Plus className="w-5 h-5" />
@@ -2869,7 +3374,7 @@ export default function App() {
                             <div className="w-12 h-12 mr-3 flex items-center justify-center">
                               {item.iconId ? (() => { const IconComp = getIconComponent(item.iconId); const style = getPresetStyle(item.iconId); return <IconComp className={`w-8 h-8 ${style.icon}`} />; })() : item.imageUrl ? <img src={item.imageUrl} className="max-w-full max-h-full" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <ImageIcon className="text-slate-300" />}
                             </div>
-                            <span className={`font-bold ${item.completed ? 'line-through text-slate-400' : 'text-slate-800 dark:text-white'}`}>{item.label}</span>
+                            <span className={`font-bold ${item.completed ? 'line-through text-slate-500' : 'text-slate-800 dark:text-white'}`}>{item.label}</span>
                           </div>
                         ))}
                       </div>
@@ -2916,9 +3421,9 @@ export default function App() {
                   </div>
                 </div>
               )}
-              {/* --- RENDERER STORIE SOCIALI (Print Optimized) --- */}
+              {/* --- RENDERER STORIE SOCIALI (writer basato sul testo) --- */}
               {currentBoard.type === 'story' && (
-                <div className="flex flex-col h-full relative pb-32">
+                <div className="flex flex-col h-full relative">
                   {/* Header Strumenti Storia (Visibile solo a schermo) */}
                   <div className="print:hidden w-full bg-pink-50 dark:bg-pink-900/20 p-3 rounded-xl border border-pink-100 dark:border-pink-800 mb-4 flex flex-wrap gap-4 justify-between items-center">
                     <div className="flex items-center gap-2 text-pink-800 dark:text-pink-200 text-sm font-bold">
@@ -2930,146 +3435,66 @@ export default function App() {
                       <div className="flex bg-white dark:bg-slate-800 rounded-lg p-1 border border-pink-200 dark:border-pink-800">
                         <button
                           onClick={() => updateTokenSettings('printOrientation', 'portrait')}
-                          className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-colors ${(!currentBoard.settings.printOrientation || currentBoard.settings.printOrientation === 'portrait') ? 'bg-pink-100 text-pink-700' : 'text-slate-400 hover:text-slate-600'}`}
+                          className={`px-3 py-2 min-h-touch rounded-md text-xs font-bold flex items-center gap-1 transition-colors ${(!currentBoard.settings.printOrientation || currentBoard.settings.printOrientation === 'portrait') ? 'bg-pink-100 text-pink-800' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
                         >
                           <div className="w-3 h-4 border-2 border-current rounded-sm"></div> Vert.
                         </button>
                         <button
                           onClick={() => updateTokenSettings('printOrientation', 'landscape')}
-                          className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-colors ${(currentBoard.settings.printOrientation === 'landscape') ? 'bg-pink-100 text-pink-700' : 'text-slate-400 hover:text-slate-600'}`}
+                          className={`px-3 py-2 min-h-touch rounded-md text-xs font-bold flex items-center gap-1 transition-colors ${(currentBoard.settings.printOrientation === 'landscape') ? 'bg-pink-100 text-pink-800' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
                         >
                           <div className="w-4 h-3 border-2 border-current rounded-sm"></div> Orizz.
                         </button>
                       </div>
-                      <button onClick={() => window.print()} className="bg-pink-600 hover:bg-pink-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-sm text-sm">
+                      <button onClick={() => window.print()} className="bg-pink-600 hover:bg-pink-700 text-white px-4 py-3 min-h-touch rounded-lg font-bold flex items-center gap-2 shadow-sm text-sm">
                         <Printer className="w-4 h-4" /> Stampa
                       </button>
                     </div>
                   </div>
 
-                  {/* Area Contenuto Storia - AGGIUNTA CLASSE print-only-content */}
-                  <div className="story-print-container print-only-content flex-1 bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-y-auto min-h-[50vh]">
-                    {activeItems.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-50 print:hidden">
-                        <BookOpen className="w-16 h-16 mb-4" />
-                        <p>Scrivi la tua storia nella barra in basso...</p>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap items-end gap-x-4 gap-y-8 content-start">
-                        {activeItems.map((item, index) => (
-                          <div key={item.id} className="group relative flex flex-col items-center justify-end w-[3.5cm] break-inside-avoid">
-
-                            {/* Pulsante Unisci parole */}
-                            {!isLocked && index < activeItems.length - 1 && (
-                              <button
-                                onClick={async () => {
-                                  const nextItem = activeItems[index + 1];
-                                  const newLabel = item.label + " " + nextItem.label;
-                                  removeItem(nextItem.id);
-                                  updateLabel(item.id, newLabel);
-                                  const result = await quickSearchArasaac(newLabel);
-                                  if (result.found) {
-                                    setCurrentBoard(prev => {
-                                      const copy = { ...prev };
-                                      copy.items = copy.items.map(i => i.id === item.id ? { ...i, imageUrl: result.imageUrl, sourceId: result.sourceId } : i);
-                                      return copy;
-                                    });
-                                  }
-                                }}
-                                className="absolute -right-5 top-1/2 -translate-y-1/2 z-20 bg-slate-100 border border-slate-300 hover:bg-blue-500 hover:text-white text-slate-400 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all shadow-sm print:hidden"
-                              >
-                                <LinkIcon className="w-3 h-3" />
-                              </button>
-                            )}
-
-                            {/* Immagine */}
-                            <div
-                              onClick={() => {
-                                if (!isLocked) {
-                                  setEditingContext({ type: 'item', id: item.id, initialTerm: item.label });
-                                  setShowSearch(true);
-                                }
-                              }}
-                              className={`w-full aspect-square border-2 ${!isLocked ? 'border-slate-100 hover:border-pink-400 cursor-pointer' : 'border-transparent'} rounded-xl overflow-hidden mb-1 bg-white relative shadow-sm print:border-none print:shadow-none`}
-                            >
-                              {item.imageUrl ? (
-                                <img src={item.imageUrl} className="w-full h-full object-contain p-1" />
-                              ) : (
-                                <div className="w-full h-full bg-slate-50 flex items-center justify-center text-slate-300 font-bold text-xs uppercase p-2 text-center break-words print:bg-transparent">
-                                  {item.label}
-                                </div>
-                              )}
-                              {!isLocked && <div className="absolute top-0 right-0 p-1 opacity-0 group-hover:opacity-100 print:hidden"><button onClick={(e) => { e.stopPropagation(); removeItem(item.id) }} className="bg-red-500 text-white rounded-full p-0.5"><X className="w-3 h-3" /></button></div>}
-                            </div>
-
-                            {/* Testo Editabile (Input a schermo, Testo in stampa) */}
-                            {!isLocked ? (
-                              <input
-                                className="w-full text-center font-sans font-bold text-lg bg-transparent border-b-2 border-transparent focus:border-blue-500 outline-none transition-colors text-slate-800 dark:text-slate-200 print:hidden"
-                                value={item.label}
-                                onChange={(e) => updateLabel(item.id, e.target.value)}
-                              />
-                            ) : null}
-                            {/* Testo visibile SEMPRE in stampa o se bloccato */}
-                            <span className={`text-lg font-bold font-sans text-center leading-tight text-slate-800 dark:text-slate-200 ${!isLocked ? 'hidden print:block' : ''}`}>{item.label}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Barra Input */}
-                  {!isLocked && (
-                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-50 print:hidden">
-                      <div className="bg-white dark:bg-slate-900 p-2 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex gap-2 items-center ring-4 ring-pink-50 dark:ring-pink-900/20">
-                        <input
-                          type="text"
-                          placeholder="Scrivi qui la storia..."
-                          className="flex-1 bg-transparent px-4 py-3 outline-none text-slate-800 dark:text-white text-lg placeholder:text-slate-400"
-                          onKeyDown={async (e) => {
-                            if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                              const text = e.currentTarget.value;
-                              e.currentTarget.value = '';
-                              const words = text.split(' ').filter(w => w.trim());
-                              setIsSaving(true);
-                              const newItems = await Promise.all(words.map(async (word) => {
-                                const search = await quickSearchArasaac(word);
-                                return { id: crypto.randomUUID(), label: word, imageUrl: search.imageUrl, sourceId: search.sourceId, completed: false };
-                              }));
-                              setCurrentBoard(prev => ({ ...prev, items: [...(prev.items || []), ...newItems] }));
-                              setIsSaving(false);
-                            }
-                          }}
-                        />
-                        <div className="bg-pink-600 text-white p-3 rounded-xl"><ArrowRight className="w-6 h-6" /></div>
-                      </div>
-                    </div>
-                  )}
+                  <StoryWriter
+                    testo={storyText}
+                    onTestoChange={(t) => setCurrentBoard(prev => ({ ...prev, storyText: t }))}
+                    onSimboliChange={handleStorySymbols}
+                    risolviImmagine={resolveArasaacImage}
+                    compattaParoleFunzione={!!currentBoard.settings?.compattaParoleFunzione}
+                    onCompattaChange={(v) => updateTokenSettings('compattaParoleFunzione', v)}
+                    isLocked={isLocked}
+                    onLeggi={voiceEnabled && speechAvailable ? speak : undefined}
+                  />
                 </div>
               )}
 
-              {/* --- RENDERER PECS GENERATOR (Grid Fissa & Sicura) --- */}
+{/* --- RENDERER PECS GENERATOR (Grid Fissa & Sicura) --- */}
               {currentBoard.type === 'pecs' && (
-                <div className="flex flex-col items-center">
+                <div className="flex flex-col items-center w-full">
                   <div className="print:hidden w-full max-w-4xl bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 mb-6 flex flex-wrap gap-4 items-center justify-between">
-                    <div className="flex gap-4 items-center">
-                      <div className="flex flex-col">
-                        <label className="text-[10px] uppercase font-bold text-indigo-400">Lato (cm)</label>
-                        <input type="number" step="0.5" value={currentBoard.settings.cardWidth} onChange={(e) => updateTokenSettings('cardWidth', parseFloat(e.target.value))} className="w-16 px-2 py-1 rounded border text-sm" />
+                    <div className="flex flex-wrap gap-4 items-end">
+                      <div className="flex flex-col gap-1">
+                        <label htmlFor="pecs-lato" className="text-[10px] uppercase font-bold text-indigo-500 dark:text-indigo-300">Lato (cm)</label>
+                        <input id="pecs-lato" type="number" step="0.5" min="1" max="10" value={currentBoard.settings.cardWidth} onChange={(e) => updateTokenSettings('cardWidth', parseFloat(e.target.value))} className="w-20 px-2 py-2 min-h-touch rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
                       </div>
-                      <div className="flex flex-col">
-                        <label className="text-[10px] uppercase font-bold text-indigo-400">Etichetta</label>
-                        <select value={currentBoard.settings.labelPosition} onChange={(e) => updateTokenSettings('labelPosition', e.target.value)} className="px-2 py-1 rounded border text-sm">
+                      <div className="flex flex-col gap-1">
+                        <label htmlFor="pecs-etichetta" className="text-[10px] uppercase font-bold text-indigo-500 dark:text-indigo-300">Etichetta</label>
+                        <select id="pecs-etichetta" value={currentBoard.settings.labelPosition} onChange={(e) => updateTokenSettings('labelPosition', e.target.value)} className="px-3 py-2 min-h-touch rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white">
                           <option value="bottom">Sotto</option>
                           <option value="top">Sopra</option>
                         </select>
                       </div>
                     </div>
-                    <button onClick={() => window.print()} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-md"><Printer className="w-4 h-4" /> Stampa / PDF</button>
+                    <button onClick={() => window.print()} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 min-h-touch rounded-lg font-bold flex items-center gap-2 shadow-md"><Printer className="w-4 h-4" /> Stampa / PDF</button>
                   </div>
 
-                  {/* Foglio A4 Simulato - AGGIUNTA CLASSE print-only-content */}
-                  <div className="print-only-content bg-white shadow-2xl print:shadow-none w-[21cm] h-[29.7cm] print:w-full print:h-full mx-auto relative bg-white border box-border print:border-none">
+                  {/*
+                    Anteprima A4 a dimensione reale: su schermi stretti la
+                    riduciamo in scala invece di far scorrere la pagina in
+                    orizzontale. In stampa la scala torna sempre a 1:1.
+                  */}
+                  <div ref={pecsWrapRef} className="pecs-sheet-wrap w-full overflow-hidden print:overflow-visible" style={{ height: `calc(29.7cm * ${pecsScale})` }}>
+                  <div
+                    className="print-only-content pecs-sheet bg-white shadow-2xl print:shadow-none w-[21cm] h-[29.7cm] print:w-full print:h-full relative border box-border print:border-none origin-top-left"
+                    style={{ transform: `scale(${pecsScale})` }}
+                  >
                     {/* Grid Container */}
                     <div className="w-full h-full flex flex-wrap content-start">
                       {(() => {
@@ -3100,7 +3525,7 @@ export default function App() {
                             }}
                           >
                             {!item.isGhost ? (
-                              <div className="w-full h-full p-1 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 print:hover:bg-transparent" onClick={() => !isLocked && setEditingContext({ type: 'item', id: item.id, initialTerm: item.label }) & setShowSearch(true)}>
+                              <div className="w-full h-full p-1 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 print:hover:bg-transparent" onClick={() => { if (isLocked) return; setEditingContext({ type: 'item', id: item.id, initialTerm: item.label }); setShowSearch(true); }}>
                                 {currentBoard.settings.labelPosition === 'top' && <span className="text-[10px] font-bold uppercase text-center w-full truncate mb-0.5 leading-none font-sans text-black">{item.label}</span>}
                                 <div className="flex-1 w-full flex items-center justify-center overflow-hidden">
                                   {item.imageUrl ? <img src={item.imageUrl} className="w-full h-full object-contain" /> : item.iconId ? (() => { const IconComp = getIconComponent(item.iconId); return <IconComp className="w-4/5 h-4/5 text-black" />; })() : null}
@@ -3120,11 +3545,12 @@ export default function App() {
                       })()}
                     </div>
                   </div>
+                  </div>
                 </div>
               )}
               {/* Messaggio "Vuoto" (NASCOSTO PER IL TIMER) */}
               {currentBoard.type !== 'token' && currentBoard.type !== 'story' && currentBoard.type !== 'pecs' && currentBoard.type !== 'timer' && activeItems.length === 0 && (
-                <div className="text-center text-slate-400">
+                <div className="text-center text-slate-500">
                   <div className="bg-white dark:bg-slate-800 p-4 rounded-full inline-block mb-3 shadow-sm"><ImageIcon className="w-8 h-8 opacity-50" /></div>
                   <p>{isLocked ? "Nessun elemento." : "Clicca \"Aggiungi\" per iniziare."}</p>
                 </div>
@@ -3207,7 +3633,17 @@ export default function App() {
                 )
               )}
             </div>
-            <div className="fixed bottom-6 right-6 z-50"><button onClick={() => setIsLocked(!isLocked)} className={`p-4 rounded-full shadow-2xl transition-all hover:scale-110 flex items-center justify-center ${isLocked ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'}`}>{isLocked ? <Lock className="w-6 h-6" /> : <Unlock className="w-6 h-6" />}</button></div>
+            <div className="print:hidden fixed bottom-safe right-4 sm:right-6 z-50">
+              <button
+                onClick={() => setIsLocked(!isLocked)}
+                aria-pressed={isLocked}
+                aria-label={isLocked ? 'Sblocca la modifica del progetto' : 'Blocca il progetto per l\'uso con il bambino'}
+                title={isLocked ? 'Modalità bambino attiva — tocca per modificare' : 'Blocca per l\'uso con il bambino'}
+                className={`p-4 min-h-touch min-w-touch rounded-full shadow-2xl transition-all hover:scale-110 active:scale-95 flex items-center justify-center text-white ${isLocked ? 'bg-red-600' : 'bg-emerald-600'}`}
+              >
+                {isLocked ? <Lock className="w-6 h-6" /> : <Unlock className="w-6 h-6" />}
+              </button>
+            </div>
           </div>
         )}
       </main>
