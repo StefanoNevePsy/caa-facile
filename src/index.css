@@ -78,14 +78,8 @@
   .animate-pulse,
   .wave-front,
   .wave-back,
-  .wave-deep,
-  .topo-mastica,
-  .bolla {
+  .topo-mastica {
     animation: none !important;
-  }
-  /* Le bollicine senza animazione resterebbero ferme a mezz'aria. */
-  .bolle {
-    display: none !important;
   }
   *,
   *::before,
