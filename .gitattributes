@@ -1,0 +1,4 @@
+# Gli script batch devono restare con terminatori Windows,
+# altrimenti cmd.exe sbaglia i salti fra le etichette.
+*.bat text eol=crlf
+*.cmd text eol=crlf
