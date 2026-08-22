@@ -2129,40 +2129,16 @@ const VisualTimer = ({ settings, onUpdateSettings, onSelectImage, customSounds =
             )}
           </div>
 
-          {/* 2. Liquido e onde SVG (doppio ciclo per un loop continuo) */}
+          {/* 2. Liquido e Onde SVG (Doppio ciclo per loop perfetto) */}
           <div className="liquid-container" style={{ height: `${percentage}%`, backgroundColor: currentColor }}>
-            {/* Le onde restano sempre: prima sparivano di colpo vicino agli
-                estremi, e il livello sembrava saltare. Vicino al pieno e al
-                vuoto si appiattiscono invece di scomparire. */}
-            {percentage > 0.2 && (
-              <div
-                className="wave-wrapper"
-                style={{
-                  color: currentColor,
-                  marginBottom: '-1px',
-                  transform: `scaleY(${Math.max(0.15, Math.min(1, percentage / 12, (100 - percentage) / 12))})`,
-                  transformOrigin: 'bottom',
-                }}
-              >
-                <svg className="wave-svg wave-deep" viewBox="0 0 2000 100" preserveAspectRatio="none">
-                  <path d="M 0 100 V 55 Q 200 25 400 55 T 800 55 T 1200 55 T 1600 55 T 2000 55 V 100 H 0 Z" fill="currentColor" />
-                </svg>
+            {percentage > 0.5 && percentage < 99.5 && (
+              <div className="wave-wrapper" style={{ color: currentColor, marginBottom: '-1px' }}>
                 <svg className="wave-svg wave-back" viewBox="0 0 2000 100" preserveAspectRatio="none">
                   <path d="M 0 100 V 50 Q 250 10 500 50 T 1000 50 T 1500 50 T 2000 50 V 100 H 0 Z" fill="currentColor" />
                 </svg>
                 <svg className="wave-svg wave-front" viewBox="0 0 2000 100" preserveAspectRatio="none">
                   <path d="M 0 100 V 50 Q 250 10 500 50 T 1000 50 T 1500 50 T 2000 50 V 100 H 0 Z" fill="currentColor" />
                 </svg>
-              </div>
-            )}
-
-            {/* Bollicine: segnalano che il tempo sta scorrendo anche quando il
-                livello si muove troppo lentamente per accorgersene. */}
-            {isActive && percentage > 6 && (
-              <div className="bolle" aria-hidden="true">
-                {[12, 34, 56, 74, 88].map((sinistra, i) => (
-                  <span key={sinistra} className="bolla" style={{ left: `${sinistra}%`, animationDelay: `${i * 1.1}s`, animationDuration: `${4 + (i % 3)}s` }} />
-                ))}
               </div>
             )}
           </div>
@@ -3000,13 +2976,6 @@ export default function App() {
         opacity: 1;
       }
 
-      /* Terza onda, più lenta e profonda: dà spessore al liquido. */
-      .wave-deep {
-        animation: wave-back 11s linear infinite;
-        opacity: 0.35;
-        transform: scaleY(1.15);
-      }
-
       /* Masticazione: un dondolio breve, meno invadente del rimbalzo continuo. */
       @keyframes mastica {
         0%, 100% { transform: translateY(0) rotate(0deg); }
@@ -3017,30 +2986,6 @@ export default function App() {
         animation: mastica 0.9s ease-in-out infinite;
       }
 
-      /* --- BOLLICINE --- */
-      .bolle {
-        position: absolute;
-        inset: 0;
-        overflow: hidden;
-        pointer-events: none;
-      }
-      .bolla {
-        position: absolute;
-        bottom: -12%;
-        width: 8px;
-        height: 8px;
-        border-radius: 9999px;
-        background: rgba(255, 255, 255, 0.45);
-        animation-name: sali;
-        animation-timing-function: ease-in;
-        animation-iteration-count: infinite;
-      }
-      @keyframes sali {
-        0%   { transform: translateY(0) scale(0.6); opacity: 0; }
-        15%  { opacity: 0.7; }
-        85%  { opacity: 0.5; }
-        100% { transform: translateY(-320px) scale(1.1); opacity: 0; }
-      }
     `;
     document.head.appendChild(style);
     return () => {
