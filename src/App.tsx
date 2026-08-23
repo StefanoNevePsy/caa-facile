@@ -18,6 +18,7 @@ import SyncBackupModal from './SyncBackupModal';
 import StoryWriter from './StoryWriter';
 import { DiscoTimer, ClessidraTimer, BatteriaTimer, RazzoTimer, TortaTimer, type TimerTheme } from './TimerThemes';
 import { urlImmagineArasaac, ricorda as ricordaSimbolo, type SimboloRisolto } from './lib/symbolizer';
+import { stampa } from './lib/stampa';
 import { App as CapApp } from '@capacitor/app';
 import type { PluginListenerHandle } from '@capacitor/core';
 // Aggiungi questi import in alto
@@ -2272,6 +2273,16 @@ export default function App() {
   // Aumenta ogni volta che il vocabolario personale cambia da fuori dal writer
   // (scelta fatta dalla ricerca completa): il writer se ne accorge e rilegge.
   const [versioneVocabolario, setVersioneVocabolario] = useState(0);
+
+  // Messaggio mostrato quando la stampa non parte (tipicamente su una versione
+  // dell'app installata prima che esistesse il ponte nativo verso Android).
+  const [erroreStampa, setErroreStampa] = useState<string | null>(null);
+
+  const avviaStampa = useCallback(async () => {
+    const verso = currentBoard?.settings?.printOrientation === 'landscape' ? 'landscape' : 'portrait';
+    const esito = await stampa(currentBoard?.title || 'CAA Facile', verso);
+    setErroreStampa(esito.ok ? null : esito.messaggio ?? 'Stampa non riuscita.');
+  }, [currentBoard]);
   const speechAvailable = isSpeechSupported();
 
   useEffect(() => {
@@ -3166,6 +3177,19 @@ export default function App() {
 
         {view === 'editor' && currentBoard && (
           <div className="flex flex-col h-full gap-6 animate-in fade-in duration-300">
+            {erroreStampa && (
+              <div role="alert" className="print:hidden flex items-start gap-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 rounded-xl p-3">
+                <Printer className="w-5 h-5 shrink-0 mt-0.5" />
+                <p className="text-sm flex-1">{erroreStampa}</p>
+                <button
+                  onClick={() => setErroreStampa(null)}
+                  aria-label="Chiudi l'avviso"
+                  className="p-2 min-h-touch min-w-touch flex items-center justify-center rounded-lg hover:bg-amber-100 dark:hover:bg-amber-800/50"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
             {/*
               STRISCIA DI FRASE — visibile in modalità bambino sulle griglie di
               comunicazione. Toccando i simboli si compone la frase, che l'app
@@ -3264,7 +3288,7 @@ export default function App() {
                             </button>
                           </div>
                           <button
-                            onClick={() => window.print()}
+                            onClick={avviaStampa}
                             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 min-h-touch rounded-lg font-bold flex items-center gap-2 shadow-sm text-sm"
                           >
                             <Printer className="w-4 h-4" /> Stampa
@@ -3477,7 +3501,7 @@ export default function App() {
                           <div className="w-4 h-3 border-2 border-current rounded-sm"></div> Orizz.
                         </button>
                       </div>
-                      <button onClick={() => window.print()} className="bg-pink-600 hover:bg-pink-700 text-white px-4 py-3 min-h-touch rounded-lg font-bold flex items-center gap-2 shadow-sm text-sm">
+                      <button onClick={avviaStampa} className="bg-pink-600 hover:bg-pink-700 text-white px-4 py-3 min-h-touch rounded-lg font-bold flex items-center gap-2 shadow-sm text-sm">
                         <Printer className="w-4 h-4" /> Stampa
                       </button>
                     </div>
@@ -3519,7 +3543,7 @@ export default function App() {
                         </select>
                       </div>
                     </div>
-                    <button onClick={() => window.print()} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 min-h-touch rounded-lg font-bold flex items-center gap-2 shadow-md"><Printer className="w-4 h-4" /> Stampa / PDF</button>
+                    <button onClick={avviaStampa} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 min-h-touch rounded-lg font-bold flex items-center gap-2 shadow-md"><Printer className="w-4 h-4" /> Stampa / PDF</button>
                   </div>
 
                   {/*
