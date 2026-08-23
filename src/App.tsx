@@ -17,7 +17,7 @@ import Cropper from 'react-easy-crop';
 import SyncBackupModal from './SyncBackupModal';
 import StoryWriter from './StoryWriter';
 import { DiscoTimer, ClessidraTimer, BatteriaTimer, RazzoTimer, TortaTimer, type TimerTheme } from './TimerThemes';
-import { urlImmagineArasaac, type SimboloRisolto } from './lib/symbolizer';
+import { urlImmagineArasaac, ricorda as ricordaSimbolo, type SimboloRisolto } from './lib/symbolizer';
 import { App as CapApp } from '@capacitor/app';
 import type { PluginListenerHandle } from '@capacitor/core';
 // Aggiungi questi import in alto
@@ -1230,6 +1230,33 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
   );
 };
 
+// --- ETICHETTA DELLA TESSERA PECS ---
+/**
+ * L'etichetta parte dal nome del pittogramma scelto, ma deve poter essere
+ * riscritta: spesso serve il nome che usa il bambino ("nonna Pina") o una
+ * forma diversa da quella del catalogo ARASAAC.
+ *
+ * Il click non si propaga alla cella, altrimenti scrivere aprirebbe la
+ * ricerca immagini.
+ */
+const EtichettaPecs = ({ item, isLocked, onChange, posizione }) => {
+  const classi = `campo-compatto w-full text-[10px] font-bold uppercase text-center leading-none font-sans text-black truncate ${posizione === 'top' ? 'mb-0.5' : 'mt-0.5'}`;
+
+  if (isLocked) return <span className={classi}>{item.label}</span>;
+
+  return (
+    <input
+      type="text"
+      value={item.label ?? ''}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onChange(item.id, e.target.value)}
+      title="Scrivi qui per cambiare l'etichetta"
+      aria-label={`Etichetta della tessera ${item.label ?? ''}`}
+      className={`${classi} bg-transparent border-none outline-none rounded-sm hover:bg-indigo-50 focus:bg-indigo-50 focus:ring-1 focus:ring-indigo-400 print:hover:bg-transparent print:focus:bg-transparent`}
+    />
+  );
+};
+
 // --- CONTROLLI VOCE ---
 // Voce e velocità sono preferenze del dispositivo (non del singolo progetto):
 // un logopedista che usa lo stesso tablet con più bambini le imposta una volta.
@@ -2242,6 +2269,9 @@ export default function App() {
     try { return localStorage.getItem('caa_voice_enabled') !== 'false'; } catch { return true; }
   });
   const [sentence, setSentence] = useState<any[]>([]);
+  // Aumenta ogni volta che il vocabolario personale cambia da fuori dal writer
+  // (scelta fatta dalla ricerca completa): il writer se ne accorge e rilegge.
+  const [versioneVocabolario, setVersioneVocabolario] = useState(0);
   const speechAvailable = isSpeechSupported();
 
   useEffect(() => {
@@ -2553,11 +2583,29 @@ export default function App() {
     const firstItem = itemsToAdd[0];
 
     // Determiniamo se stiamo sostituendo un elemento esistente
-    const isReplacing = editingContext?.type === 'boardCover' ||
+    const isReplacing = editingContext?.type === 'storyWord' ||
+      editingContext?.type === 'boardCover' ||
       editingContext?.type === 'tokenImage' ||
       editingContext?.type === 'rewardImage' ||
       editingContext?.type === 'timerImage' ||
       (editingContext?.type === 'item' && editingContext.id);
+
+    if (editingContext?.type === 'storyWord') {
+      // Immagine scelta dalla ricerca completa per un termine della storia:
+      // viene memorizzata come le scelte fatte dalla tendina rapida, quindi
+      // vale anche nelle storie successive.
+      if (firstItem?.sourceId) {
+        await ricordaSimbolo(
+          editingContext.chiave,
+          String(firstItem.sourceId),
+          String(editingContext.chiave).includes(' '),
+        );
+        setVersioneVocabolario((v) => v + 1);
+      }
+      setEditingContext(null);
+      setShowSearch(false);
+      return;
+    }
 
     if (editingContext?.type === 'boardCover') {
       const boardToUpdate = await dbOperations.getBoard(editingContext.boardId);
@@ -2853,6 +2901,7 @@ export default function App() {
   // Stili per la stampa e visualizzazione PECS (DINAMICO & AGGRESSIVO)
   // Stili per la stampa e visualizzazione PECS (E ANIMAZIONE TIMER)
   useEffect(() => {
+    // Vale per storie, agende e PECS: tutte hanno un proprio selettore.
     const orientation = currentBoard?.settings?.printOrientation || 'portrait';
 
     const style = document.createElement('style');
@@ -3184,7 +3233,44 @@ export default function App() {
                 {!isLocked && (
                   <div className="flex flex-wrap gap-2 w-full md:w-auto items-center">
                     {currentBoard.type === 'sequence' && (
-                      <button onClick={() => updateTokenSettings('orientation', currentBoard.settings?.orientation === 'vertical' ? 'horizontal' : 'vertical')} className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-200">{currentBoard.settings?.orientation === 'vertical' ? <ArrowDown className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />} Orientamento</button>
+                      <>
+                        <button
+                          onClick={() => updateTokenSettings('orientation', currentBoard.settings?.orientation === 'vertical' ? 'horizontal' : 'vertical')}
+                          title="Disposizione dei simboli sullo schermo e in stampa"
+                          className="flex items-center gap-2 px-4 py-2 min-h-touch bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-200"
+                        >
+                          {currentBoard.settings?.orientation === 'vertical' ? <ArrowDown className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />} Orientamento
+                        </button>
+
+                        {/* Stampa dell'agenda: le agende si appendono al muro o
+                            si mettono nello zaino, quindi servono su carta. */}
+                        <div className="flex items-center gap-2 p-1 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-800">
+                          <div className="flex bg-white dark:bg-slate-800 rounded-md p-0.5 border border-emerald-200 dark:border-emerald-800">
+                            <button
+                              onClick={() => updateTokenSettings('printOrientation', 'portrait')}
+                              title="Foglio verticale"
+                              aria-pressed={(currentBoard.settings?.printOrientation ?? 'portrait') === 'portrait'}
+                              className={`px-2.5 py-2 min-h-touch rounded text-xs font-bold flex items-center gap-1 transition-colors ${(currentBoard.settings?.printOrientation ?? 'portrait') === 'portrait' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
+                            >
+                              <div className="w-3 h-4 border-2 border-current rounded-sm"></div> Vert.
+                            </button>
+                            <button
+                              onClick={() => updateTokenSettings('printOrientation', 'landscape')}
+                              title="Foglio orizzontale"
+                              aria-pressed={currentBoard.settings?.printOrientation === 'landscape'}
+                              className={`px-2.5 py-2 min-h-touch rounded text-xs font-bold flex items-center gap-1 transition-colors ${currentBoard.settings?.printOrientation === 'landscape' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
+                            >
+                              <div className="w-4 h-3 border-2 border-current rounded-sm"></div> Orizz.
+                            </button>
+                          </div>
+                          <button
+                            onClick={() => window.print()}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 min-h-touch rounded-lg font-bold flex items-center gap-2 shadow-sm text-sm"
+                          >
+                            <Printer className="w-4 h-4" /> Stampa
+                          </button>
+                        </div>
+                      </>
                     )}
                     {currentBoard.type === 'token' && (
                       <div className="flex flex-wrap gap-3 items-center w-full md:w-auto p-2 bg-slate-50 dark:bg-slate-900 rounded-lg">
@@ -3406,6 +3492,11 @@ export default function App() {
                     onCompattaChange={(v) => updateTokenSettings('compattaParoleFunzione', v)}
                     isLocked={isLocked}
                     onLeggi={voiceEnabled && speechAvailable ? speak : undefined}
+                    versioneVocabolario={versioneVocabolario}
+                    onApriRicerca={(chiave, testoTessera) => {
+                      setEditingContext({ type: 'storyWord', chiave, initialTerm: testoTessera });
+                      setShowSearch(true);
+                    }}
                   />
                 </div>
               )}
@@ -3421,9 +3512,10 @@ export default function App() {
                       </div>
                       <div className="flex flex-col gap-1">
                         <label htmlFor="pecs-etichetta" className="text-[10px] uppercase font-bold text-indigo-500 dark:text-indigo-300">Etichetta</label>
-                        <select id="pecs-etichetta" value={currentBoard.settings.labelPosition} onChange={(e) => updateTokenSettings('labelPosition', e.target.value)} className="px-3 py-2 min-h-touch rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white">
+                        <select id="pecs-etichetta" value={currentBoard.settings.labelPosition ?? 'bottom'} onChange={(e) => updateTokenSettings('labelPosition', e.target.value)} className="px-3 py-2 min-h-touch rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white">
                           <option value="bottom">Sotto</option>
                           <option value="top">Sopra</option>
+                          <option value="none">Nessuna</option>
                         </select>
                       </div>
                     </div>
@@ -3471,11 +3563,15 @@ export default function App() {
                           >
                             {!item.isGhost ? (
                               <div className="w-full h-full p-1 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 print:hover:bg-transparent" onClick={() => { if (isLocked) return; setEditingContext({ type: 'item', id: item.id, initialTerm: item.label }); setShowSearch(true); }}>
-                                {currentBoard.settings.labelPosition === 'top' && <span className="text-[10px] font-bold uppercase text-center w-full truncate mb-0.5 leading-none font-sans text-black">{item.label}</span>}
+                                {currentBoard.settings.labelPosition === 'top' && (
+                                  <EtichettaPecs item={item} isLocked={isLocked} onChange={updateLabel} posizione="top" />
+                                )}
                                 <div className="flex-1 w-full flex items-center justify-center overflow-hidden">
                                   {item.imageUrl ? <img src={item.imageUrl} className="w-full h-full object-contain" /> : item.iconId ? (() => { const IconComp = getIconComponent(item.iconId); return <IconComp className="w-4/5 h-4/5 text-black" />; })() : null}
                                 </div>
-                                {currentBoard.settings.labelPosition === 'bottom' && <span className="text-[10px] font-bold uppercase text-center w-full truncate mt-0.5 leading-none font-sans text-black">{item.label}</span>}
+                                {(currentBoard.settings.labelPosition ?? 'bottom') === 'bottom' && (
+                                  <EtichettaPecs item={item} isLocked={isLocked} onChange={updateLabel} posizione="bottom" />
+                                )}
                                 {!isLocked && <button onClick={(e) => { e.stopPropagation(); removeItem(item.id) }} className="absolute top-0.5 right-0.5 z-10 text-red-500 hover:text-red-700 print:hidden"><X className="w-3 h-3" /></button>}
                               </div>
                             ) : (
@@ -3538,7 +3634,11 @@ export default function App() {
                     ))}
                   </div>
                 ) : (
-                  <div className={`${currentBoard.settings?.orientation === 'vertical' ? 'flex flex-col gap-4 w-full max-w-md mx-auto' : 'flex gap-4 overflow-x-auto pb-6 pt-2 snap-x px-2 h-full items-center w-full'}`}>
+                  <div className={`print-only-content ${currentBoard.settings?.orientation === 'vertical'
+                    ? 'flex flex-col gap-4 w-full max-w-md mx-auto'
+                    // In stampa niente scorrimento orizzontale: le tessere vanno
+                    // a capo, altrimenti oltre il bordo del foglio si perdono.
+                    : 'flex gap-4 overflow-x-auto print:overflow-visible print:flex-wrap print:justify-start pb-6 pt-2 snap-x px-2 h-full items-center w-full'}`}>
                     {activeItems.map((item, index) => (
                       <div
                         key={item.id}
@@ -3546,7 +3646,7 @@ export default function App() {
                         onDragStart={(e) => handleDragStart(e, index)}
                         onDragOver={(e) => handleDragOver(e, index)}
                         onDragEnd={handleDragEnd}
-                        className={`relative ${currentBoard.settings?.orientation === 'vertical' ? 'w-full' : 'snap-center'}`}
+                        className={`relative break-inside-avoid ${currentBoard.settings?.orientation === 'vertical' ? 'w-full' : 'snap-center'}`}
                       >
                         {/* --- INDICATORE LINEA BLU (SEQUENCE) --- */}
                         {!isLocked && dropIndicator.index === index && (

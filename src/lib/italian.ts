@@ -315,3 +315,70 @@ export function segmenta(testo: string, opzioni: OpzioniSegmentazione = {}): Seg
 
   return segmenti;
 }
+
+/* ------------------------------------------------------------------ */
+/* RIGHE ED ELENCHI                                                    */
+/* ------------------------------------------------------------------ */
+
+export type TipoRiga = 'normale' | 'punto' | 'numero' | 'vuota';
+
+export interface Riga {
+  tipo: TipoRiga;
+  /** Numero mostrato negli elenchi numerati (rinumerato in modo continuo). */
+  numero?: number;
+  segmenti: Segmento[];
+}
+
+/**
+ * Riconosce i marcatori di elenco all'inizio di una riga.
+ *
+ * Si accettano le convenzioni che una persona scrive d'istinto ("- ", "* ",
+ * "1. ", "1) ") senza doverle imparare: chi non le conosce usa i pulsanti
+ * della barra strumenti, che inseriscono esattamente questi caratteri.
+ */
+function riconosciMarcatore(riga: string): { tipo: TipoRiga; resto: string } {
+  const puntato = riga.match(/^\s*[-*•]\s+(.*)$/);
+  if (puntato) return { tipo: 'punto', resto: puntato[1] };
+
+  const numerato = riga.match(/^\s*\d+[.)]\s+(.*)$/);
+  if (numerato) return { tipo: 'numero', resto: numerato[1] };
+
+  return { tipo: 'normale', resto: riga };
+}
+
+/**
+ * Divide un testo su più righe in unità di significato, riga per riga.
+ *
+ * Prima `segmenta` veniva applicata all'intero testo e gli a capo sparivano,
+ * perché la divisione su `\s+` tratta il ritorno a capo come uno spazio: una
+ * storia scritta su più righe usciva come un unico blocco continuo.
+ */
+export function segmentaTesto(testo: string, opzioni: OpzioniSegmentazione = {}): Riga[] {
+  const righe = testo.split('\n');
+  const risultato: Riga[] = [];
+  let contatoreNumerato = 0;
+
+  for (const riga of righe) {
+    if (!riga.trim()) {
+      // Una riga vuota resta uno stacco visivo e interrompe la numerazione.
+      risultato.push({ tipo: 'vuota', segmenti: [] });
+      contatoreNumerato = 0;
+      continue;
+    }
+
+    const { tipo, resto } = riconosciMarcatore(riga);
+
+    // La numerazione la decide l'app, non il numero scritto: così inserendo
+    // una voce in mezzo non serve rinumerare tutto a mano.
+    if (tipo === 'numero') contatoreNumerato++;
+    else contatoreNumerato = 0;
+
+    risultato.push({
+      tipo,
+      numero: tipo === 'numero' ? contatoreNumerato : undefined,
+      segmenti: segmenta(resto, opzioni),
+    });
+  }
+
+  return risultato;
+}

@@ -11,8 +11,10 @@
     overscroll-behavior-y: none;
   }
 
-  /* Su iOS un input con font < 16px fa zoomare la pagina al focus. */
-  input,
+  /* Su iOS un input con font < 16px fa zoomare la pagina al focus.
+     Eccezione per `.campo-compatto`: le etichette delle tessere PECS vivono in
+     celle di pochi centimetri e a 16px sfonderebbero il layout di stampa. */
+  input:not(.campo-compatto),
   select,
   textarea {
     font-size: max(16px, 1em);
