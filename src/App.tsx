@@ -18,7 +18,7 @@ import SyncBackupModal from './SyncBackupModal';
 import StoryWriter from './StoryWriter';
 import { DiscoTimer, ClessidraTimer, BatteriaTimer, RazzoTimer, TortaTimer, type TimerTheme } from './TimerThemes';
 import { urlImmagineArasaac, ricorda as ricordaSimbolo, type SimboloRisolto } from './lib/symbolizer';
-import { stampa, adattaSimboloAllaPagina } from './lib/stampa';
+import { stampa, adattaSimboloAllaPagina, misureTessera, misureRiga, larghezzaColonna } from './lib/stampa';
 import ControlliStampa, { variabiliDimensione } from './PrintControls';
 import { App as CapApp } from '@capacitor/app';
 import type { PluginListenerHandle } from '@capacitor/core';
@@ -1242,20 +1242,25 @@ const ImageEditorModal = ({ isOpen, onClose, imageSrc, onSave }) => {
  * ricerca immagini.
  */
 const EtichettaPecs = ({ item, isLocked, onChange, posizione }) => {
-  const classi = `campo-compatto w-full text-[10px] font-bold uppercase text-center leading-none font-sans text-black truncate ${posizione === 'top' ? 'mb-0.5' : 'mt-0.5'}`;
+  const classi = `campo-compatto w-full text-[10px] font-bold uppercase text-center leading-tight font-sans text-black ${posizione === 'top' ? 'mb-0.5' : 'mt-0.5'}`;
 
-  if (isLocked) return <span className={classi}>{item.label}</span>;
+  if (isLocked) return <span className={`${classi} block break-words`}>{item.label}</span>;
 
   return (
-    <input
-      type="text"
-      value={item.label ?? ''}
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => onChange(item.id, e.target.value)}
-      title="Scrivi qui per cambiare l'etichetta"
-      aria-label={`Etichetta della tessera ${item.label ?? ''}`}
-      className={`${classi} bg-transparent border-none outline-none rounded-sm hover:bg-indigo-50 focus:bg-indigo-50 focus:ring-1 focus:ring-indigo-400 print:hover:bg-transparent print:focus:bg-transparent`}
-    />
+    <>
+      <input
+        type="text"
+        value={item.label ?? ''}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => onChange(item.id, e.target.value)}
+        title="Scrivi qui per cambiare l'etichetta"
+        aria-label={`Etichetta della tessera ${item.label ?? ''}`}
+        className={`${classi} print:hidden bg-transparent border-none outline-none rounded-sm hover:bg-indigo-50 focus:bg-indigo-50 focus:ring-1 focus:ring-indigo-400`}
+      />
+      {/* Un campo di testo, in stampa, taglia quello che non ci sta in
+          larghezza. Sul foglio va quindi il testo vero, che puo' andare a capo. */}
+      <span aria-hidden="true" className={`${classi} hidden print:block break-words`}>{item.label}</span>
+    </>
   );
 };
 
@@ -1359,6 +1364,18 @@ const PictogramCard = ({
   const isHorizontalSequence = mode === 'sequence' && orientation === 'horizontal';
   const isVerticalSequence = mode === 'sequence' && orientation === 'vertical';
 
+  // Il simbolo tiene la misura richiesta e la tessera si adatta: in colonna
+  // cresce in altezza quando l'etichetta va a capo, in riga si allarga fino
+  // alla parola più lunga. L'etichetta non viene mai tagliata.
+  const riga = misureRiga('6rem');
+  const tessera = misureTessera('140px');
+  const stileTessera = isHorizontalSequence ? tessera.tessera : undefined;
+  const stileSimbolo = isVerticalSequence
+    ? riga.simbolo
+    : isHorizontalSequence
+      ? tessera.simbolo
+      : undefined;
+
   // Gestore del click principale
   const handleCardClick = () => {
     if (isLocked && onClick) {
@@ -1371,13 +1388,7 @@ const PictogramCard = ({
   return (
     <div
       onClick={handleCardClick}
-      style={
-        isVerticalSequence
-          ? { height: 'var(--caa-simbolo, 6rem)' }
-          : isHorizontalSequence
-            ? { width: 'var(--caa-simbolo, 140px)' }
-            : undefined
-      }
+      style={stileTessera}
       className={`
         relative group flex items-center p-3 rounded-xl shadow-sm border-2 transition-all duration-200
         ${/* LOGICA EVIDENZIAZIONE */ ''}
@@ -1385,13 +1396,12 @@ const PictogramCard = ({
         ${!isActive && isLocked ? 'hover:scale-[1.02] active:scale-95 cursor-pointer' : ''}
         ${item.completed ? 'bg-slate-100 border-slate-200 opacity-60 grayscale' : 'bg-white dark:bg-slate-800'}
         ${isVerticalSequence ? 'flex-row w-full gap-4' : 'flex-col'}
-        ${isHorizontalSequence ? 'aspect-[4/5]' : ''}
         ${mode === 'grid' ? 'aspect-square flex-col' : ''}
         ${(mode === 'sequence' && !isLocked) ? 'hover:border-blue-400 cursor-grab active:cursor-grabbing hover:shadow-md' : ''}
       `}
     >
       {!isLocked && onRemove && (
-        <button onClick={(e) => { e.stopPropagation(); onRemove(item.id); }} className="absolute -top-2 -right-2 bg-red-100 text-red-600 p-1.5 rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-200 transition-all z-10 shadow-sm">
+        <button onClick={(e) => { e.stopPropagation(); onRemove(item.id); }} className="print:hidden absolute -top-2 -right-2 bg-red-100 text-red-600 p-1.5 rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-200 transition-all z-10 shadow-sm">
           <Trash2 className="w-4 h-4" />
         </button>
       )}
@@ -1402,7 +1412,12 @@ const PictogramCard = ({
         </button>
       )}
 
-      <div className={`flex items-center justify-center p-1 overflow-hidden relative pointer-events-none ${isVerticalSequence ? 'h-full aspect-square' : 'flex-1 w-full'}`}>
+      <div
+        style={stileSimbolo}
+        className={`flex items-center justify-center p-1 overflow-hidden relative pointer-events-none ${
+          isVerticalSequence ? '' : isHorizontalSequence ? 'w-full shrink-0' : 'flex-1 w-full'
+        }`}
+      >
         {item.iconId ? (
           (() => {
             const IconComp = getIconComponent(item.iconId);
@@ -1423,7 +1438,10 @@ const PictogramCard = ({
         {!isLocked && onReplaceImage && <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg"><RotateCcw className="text-white w-6 h-6 drop-shadow-md" /></div>}
       </div>
 
-      <div className={isVerticalSequence ? 'flex-1 text-left px-2 min-w-0' : 'text-center mt-2 w-full min-h-[1.5em]'}>
+      <div
+        style={isHorizontalSequence ? tessera.etichetta : undefined}
+        className={isVerticalSequence ? 'flex-1 text-left px-2' : 'text-center mt-2 w-full min-h-[1.5em]'}
+      >
         {isEditing && !isLocked && onEditLabel ? (
           <input type="text" value={tempLabel} onClick={(e) => e.stopPropagation()} onChange={(e) => setTempLabel(e.target.value)} onBlur={saveLabel} onKeyDown={(e) => e.key === 'Enter' && saveLabel()} className="w-full text-sm font-bold bg-blue-50 dark:bg-slate-600 rounded px-1 outline-none border border-blue-300" autoFocus />
         ) : (
@@ -2987,6 +3005,9 @@ export default function App() {
           left: 0 !important;
           top: 0 !important;
           width: 100% !important;
+          /* A schermo la colonna e' incolonnata al centro; sul foglio deve
+             usare tutta la larghezza, o all'etichetta resta poco spazio. */
+          max-width: none !important;
           margin: 0 !important;
           padding: 0 !important;
           background: white !important;
@@ -3678,8 +3699,14 @@ export default function App() {
                     ))}
                   </div>
                 ) : (
-                  <div style={stiliDimensione} className={`print-only-content agenda-stampa ${currentBoard.settings?.orientation === 'vertical'
-                    ? 'flex flex-col gap-4 w-full max-w-2xl mx-auto print:max-w-none'
+                  <div
+                    style={
+                      currentBoard.settings?.orientation === 'vertical'
+                        ? { ...stiliDimensione, maxWidth: larghezzaColonna('6rem') }
+                        : stiliDimensione
+                    }
+                    className={`print-only-content agenda-stampa ${currentBoard.settings?.orientation === 'vertical'
+                    ? 'flex flex-col gap-4 w-full mx-auto'
                     // In stampa niente scorrimento orizzontale: le tessere vanno
                     // a capo, altrimenti oltre il bordo del foglio si perdono.
                     : 'flex gap-4 overflow-x-auto print:overflow-visible print:flex-wrap print:justify-start pb-6 pt-2 snap-x px-2 h-full items-center w-full'}`}>

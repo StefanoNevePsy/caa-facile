@@ -10,6 +10,7 @@ import {
   urlImmagineArasaac,
   type SimboloRisolto,
 } from './lib/symbolizer';
+import { misureTessera } from './lib/stampa';
 
 /**
  * Writer di simboli per le storie sociali.
@@ -60,6 +61,9 @@ export interface StoryWriterProps {
   /** Variabili CSS `--caa-simbolo` e `--caa-testo`. */
   stiliDimensione?: React.CSSProperties;
 }
+
+/** Misure della tessera: simbolo alla dimensione scelta, etichetta mai tagliata. */
+const misure = misureTessera('3.5cm');
 
 export default function StoryWriter({
   testo,
@@ -417,20 +421,33 @@ export default function StoryWriter({
                     </span>
                   )}
 
-                  <div className="flex flex-wrap items-end gap-x-1 gap-y-6">
+                  {/* Lo spazio fra le tessere cresce con il corpo del testo:
+                      a misura fissa, con caratteri grandi, le parole finiscono
+                      per toccarsi e si leggono come una parola sola. */}
+                  <div
+                    style={{
+                      columnGap: 'calc(var(--caa-testo, 1rem) * 0.4)',
+                      rowGap: 'calc(var(--caa-testo, 1rem) * 1.3)',
+                    }}
+                    className="flex flex-wrap items-end"
+                  >
                     {riga.simboli.map((simbolo, si) => {
                       const p: Posizione = { riga: ri, simbolo: si };
                       return (
                         <React.Fragment key={`${simbolo.chiave}-${si}`}>
-                          <div style={{ width: 'var(--caa-simbolo, 3.5cm)' }}
-                            className="relative flex flex-col items-center justify-end break-inside-avoid w-[3.5cm]">
+                          {/* La tessera è larga quanto il simbolo, ma si
+                              allarga fino alla parola più lunga dell'etichetta:
+                              il testo va a capo fra le parole, non a metà. */}
+                          <div style={misure.tessera}
+                            className="relative flex flex-col items-center justify-end break-inside-avoid">
                             <button
                               type="button"
                               disabled={soloLettura}
                               onClick={() => apriAlternative(p)}
                               aria-label={`Simbolo per ${simbolo.testo}. Tocca per cambiarlo.`}
                               aria-expanded={aperto(p)}
-                              className={`w-full aspect-square rounded-xl overflow-hidden mb-1 bg-white relative border-2 transition-colors print:border-none print:shadow-none ${
+                              style={misure.simbolo}
+                              className={`shrink-0 rounded-xl overflow-hidden mb-1 bg-white relative border-2 transition-colors print:border-none print:shadow-none ${
                                 soloLettura
                                   ? 'border-transparent'
                                   : aperto(p)
@@ -453,7 +470,7 @@ export default function StoryWriter({
                             </button>
 
                             <span
-                              style={{ fontSize: 'var(--caa-testo, 1.125rem)' }}
+                              style={{ fontSize: 'var(--caa-testo, 1.125rem)', ...misure.etichetta }}
                               className="font-bold font-sans text-center leading-tight text-slate-800 dark:text-slate-200 break-words w-full"
                             >
                               {simbolo.testo}

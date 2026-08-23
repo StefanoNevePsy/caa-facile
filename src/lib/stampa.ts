@@ -105,17 +105,6 @@ export interface OpzioniAdattamento {
   massimo?: number;
 }
 
-/**
- * Calcola quanto grandi possono essere le tessere perché il contenuto riempia
- * il foglio senza traboccare.
- *
- * Serve al caso più frequente: un'agenda di quattro voci che, a dimensione
- * fissa, lascia mezza pagina bianca e risulta minuscola appesa al muro.
- *
- * È un calcolo geometrico, non una misura del DOM: sullo schermo il contenitore
- * non è largo quanto un A4, quindi misurare lì darebbe un a capo diverso da
- * quello di stampa e il risultato sarebbe sbagliato.
- */
 export interface RisultatoAdattamento {
   /** Lato della tessera, in centimetri. */
   lato: number;
@@ -174,4 +163,68 @@ export function adattaSimboloAllaPagina(opzioni: OpzioniAdattamento): RisultatoA
     pagine: Math.ceil(righe / righePerPagina),
     traboccante: true,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* MISURE DELLE TESSERE                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * L'etichetta non si taglia mai e non si spezza a metà parola: è la parte che
+ * si legge, e "COLAZIO/NE" su due righe è peggio che nulla.
+ *
+ * Le due misure regolabili (lato del simbolo e corpo del testo) sono
+ * indipendenti, quindi possono entrare in conflitto: un simbolo da 2,5 cm con
+ * il testo a 30 pt darebbe una tessera troppo stretta per la parola che
+ * contiene. Invece di indovinare quanto serve, lo si chiede al browser:
+ *
+ * - `min-width: min-content` sulla tessera: la larghezza minima diventa quella
+ *   della parola più lunga dell'etichetta (o del simbolo, se è più largo);
+ * - `max-width` sull'etichetta: oltre quel limite la tessera non cresce più —
+ *   una parola chilometrica non deve sfondare la riga — e da lì in poi la
+ *   parola va a capo davvero. Il limite è il maggiore fra il doppio del
+ *   simbolo e una decina di caratteri, perché con simboli piccoli e testo
+ *   grande il doppio del simbolo non basterebbe nemmeno per "oggi".
+ *
+ * Perché funzioni l'etichetta deve usare `overflow-wrap: break-word`
+ * (`break-words`) e **non** `anywhere`: quest'ultimo azzera la larghezza
+ * minima intrinseca e la tessera resterebbe stretta.
+ */
+export function misureTessera(latoPredefinito: string) {
+  const lato = `var(--caa-simbolo, ${latoPredefinito})`;
+  return {
+    tessera: { width: lato, minWidth: 'min-content' as const },
+    simbolo: { width: lato, height: lato },
+    etichetta: { maxWidth: `max(calc(${lato} * 2), calc(var(--caa-testo, 1rem) * 10))` },
+  };
+}
+
+/**
+ * Riga di una lista in colonna: simbolo a sinistra, etichetta a destra.
+ *
+ * Qui la tessera non può allargarsi, è già larga quanto il foglio: se il
+ * simbolo se lo prende tutto, all'etichetta restano due lettere per riga.
+ * Quando lo spazio non basta per entrambi, a cedere è il simbolo.
+ *
+ * Lo decide il flexbox, non un calcolo a occhio: l'etichetta accanto non ha
+ * `min-w-0`, quindi la sua larghezza minima automatica è quella della parola
+ * più lunga; il simbolo è l'unico che può restringersi e lo fa solo di quanto
+ * serve, fermandosi a 2 cm. Alle misure normali non si restringe affatto.
+ */
+export function misureRiga(latoPredefinito: string) {
+  const lato = `var(--caa-simbolo, ${latoPredefinito})`;
+  return {
+    simbolo: { width: lato, minWidth: '2cm', aspectRatio: '1' },
+  };
+}
+
+/**
+ * Larghezza massima di una lista in colonna (agenda verticale).
+ *
+ * Con simboli grandi la riga deve poter crescere, altrimenti al simbolo
+ * resterebbe tutto lo spazio e all'etichetta accanto una colonna di due
+ * parole. Resta comunque dentro la finestra: `100%` ha la precedenza.
+ */
+export function larghezzaColonna(latoPredefinito: string): string {
+  return `min(100%, max(42rem, calc(var(--caa-simbolo, ${latoPredefinito}) * 3)))`;
 }
