@@ -55,6 +55,10 @@ export interface StoryWriterProps {
    * far ricalcolare l'anteprima.
    */
   versioneVocabolario?: number;
+  /** Barra dei controlli di dimensione e stampa, resa dal genitore. */
+  controlli?: React.ReactNode;
+  /** Variabili CSS `--caa-simbolo` e `--caa-testo`. */
+  stiliDimensione?: React.CSSProperties;
 }
 
 export default function StoryWriter({
@@ -68,6 +72,8 @@ export default function StoryWriter({
   onLeggi,
   onApriRicerca,
   versioneVocabolario = 0,
+  controlli,
+  stiliDimensione,
 }: StoryWriterProps) {
   const [righe, setRighe] = useState<RigaRisolta[]>([]);
   const [inElaborazione, setInElaborazione] = useState(false);
@@ -371,6 +377,8 @@ export default function StoryWriter({
         </div>
       )}
 
+      {controlli}
+
       {ultimaAzione && (
         <p role="status" className="print:hidden text-xs font-medium text-emerald-800 dark:text-emerald-200 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-lg px-3 py-2">
           {ultimaAzione}
@@ -378,7 +386,7 @@ export default function StoryWriter({
       )}
 
       {/* ---------- ANTEPRIMA / CONTENUTO STAMPABILE ---------- */}
-      <div className="story-print-container print-only-content flex-1 bg-white dark:bg-slate-800 p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 min-h-[40vh]">
+      <div style={stiliDimensione} className="story-print-container print-only-content flex-1 bg-white dark:bg-slate-800 p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 min-h-[40vh]">
         {!haContenuto ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-400 py-16 print:hidden">
             <p className="text-center max-w-sm">
@@ -414,7 +422,8 @@ export default function StoryWriter({
                       const p: Posizione = { riga: ri, simbolo: si };
                       return (
                         <React.Fragment key={`${simbolo.chiave}-${si}`}>
-                          <div className="relative flex flex-col items-center justify-end w-[3.5cm] break-inside-avoid">
+                          <div style={{ width: 'var(--caa-simbolo, 3.5cm)' }}
+                            className="relative flex flex-col items-center justify-end break-inside-avoid w-[3.5cm]">
                             <button
                               type="button"
                               disabled={soloLettura}
@@ -443,7 +452,10 @@ export default function StoryWriter({
                               )}
                             </button>
 
-                            <span className="text-lg font-bold font-sans text-center leading-tight text-slate-800 dark:text-slate-200 break-words w-full">
+                            <span
+                              style={{ fontSize: 'var(--caa-testo, 1.125rem)' }}
+                              className="font-bold font-sans text-center leading-tight text-slate-800 dark:text-slate-200 break-words w-full"
+                            >
                               {simbolo.testo}
                             </span>
 

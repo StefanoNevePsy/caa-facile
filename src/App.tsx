@@ -18,7 +18,8 @@ import SyncBackupModal from './SyncBackupModal';
 import StoryWriter from './StoryWriter';
 import { DiscoTimer, ClessidraTimer, BatteriaTimer, RazzoTimer, TortaTimer, type TimerTheme } from './TimerThemes';
 import { urlImmagineArasaac, ricorda as ricordaSimbolo, type SimboloRisolto } from './lib/symbolizer';
-import { stampa } from './lib/stampa';
+import { stampa, adattaSimboloAllaPagina } from './lib/stampa';
+import ControlliStampa, { variabiliDimensione } from './PrintControls';
 import { App as CapApp } from '@capacitor/app';
 import type { PluginListenerHandle } from '@capacitor/core';
 // Aggiungi questi import in alto
@@ -1370,14 +1371,21 @@ const PictogramCard = ({
   return (
     <div
       onClick={handleCardClick}
+      style={
+        isVerticalSequence
+          ? { height: 'var(--caa-simbolo, 6rem)' }
+          : isHorizontalSequence
+            ? { width: 'var(--caa-simbolo, 140px)' }
+            : undefined
+      }
       className={`
         relative group flex items-center p-3 rounded-xl shadow-sm border-2 transition-all duration-200
         ${/* LOGICA EVIDENZIAZIONE */ ''}
         ${isActive && isLocked ? 'ring-4 ring-blue-500 border-blue-600 scale-105 bg-blue-50 dark:bg-blue-900/30 z-10' : 'border-slate-200 dark:border-slate-700'}
         ${!isActive && isLocked ? 'hover:scale-[1.02] active:scale-95 cursor-pointer' : ''}
         ${item.completed ? 'bg-slate-100 border-slate-200 opacity-60 grayscale' : 'bg-white dark:bg-slate-800'}
-        ${isVerticalSequence ? 'flex-row w-full h-24 gap-4' : 'flex-col'}
-        ${isHorizontalSequence ? 'min-w-[140px] max-w-[140px] aspect-[4/5]' : ''}
+        ${isVerticalSequence ? 'flex-row w-full gap-4' : 'flex-col'}
+        ${isHorizontalSequence ? 'aspect-[4/5]' : ''}
         ${mode === 'grid' ? 'aspect-square flex-col' : ''}
         ${(mode === 'sequence' && !isLocked) ? 'hover:border-blue-400 cursor-grab active:cursor-grabbing hover:shadow-md' : ''}
       `}
@@ -1389,7 +1397,7 @@ const PictogramCard = ({
       )}
 
       {mode === 'sequence' && (
-        <button onClick={(e) => { e.stopPropagation(); onToggleComplete(item.id); }} className={`z-10 p-1 rounded-full bg-white dark:bg-slate-700 shadow-sm transition-colors ${isVerticalSequence ? 'mr-2' : 'absolute top-2 left-2'} ${item.completed ? 'text-green-600' : 'text-slate-300 hover:text-green-500'}`}>
+        <button onClick={(e) => { e.stopPropagation(); onToggleComplete(item.id); }} className={`z-10 p-1 rounded-full bg-white dark:bg-slate-700 shadow-sm transition-colors print:hidden ${isVerticalSequence ? 'mr-2' : 'absolute top-2 left-2'} ${item.completed ? 'text-green-600' : 'text-slate-300 hover:text-green-500'}`}>
           <CheckCircle2 className={`w-6 h-6 ${item.completed ? 'fill-green-100' : ''}`} />
         </button>
       )}
@@ -1415,11 +1423,15 @@ const PictogramCard = ({
         {!isLocked && onReplaceImage && <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg"><RotateCcw className="text-white w-6 h-6 drop-shadow-md" /></div>}
       </div>
 
-      <div className={`text-center ${isVerticalSequence ? 'flex-1 text-left px-2' : 'mt-2 w-full min-h-[1.5em]'}`}>
+      <div className={isVerticalSequence ? 'flex-1 text-left px-2 min-w-0' : 'text-center mt-2 w-full min-h-[1.5em]'}>
         {isEditing && !isLocked && onEditLabel ? (
           <input type="text" value={tempLabel} onClick={(e) => e.stopPropagation()} onChange={(e) => setTempLabel(e.target.value)} onBlur={saveLabel} onKeyDown={(e) => e.key === 'Enter' && saveLabel()} className="w-full text-sm font-bold bg-blue-50 dark:bg-slate-600 rounded px-1 outline-none border border-blue-300" autoFocus />
         ) : (
-          <p onClick={(e) => { if (!isLocked && onEditLabel) { e.stopPropagation(); setIsEditing(true); } }} className={`font-bold uppercase tracking-wide truncate ${!isLocked && onEditLabel ? 'cursor-text hover:text-blue-600 dark:hover:text-blue-400' : ''} ${item.completed ? 'line-through decoration-2 text-slate-500' : 'text-slate-800 dark:text-slate-200'} ${isVerticalSequence ? 'text-xl' : 'text-sm md:text-base'}`}>{item.label}</p>
+          <p
+            onClick={(e) => { if (!isLocked && onEditLabel) { e.stopPropagation(); setIsEditing(true); } }}
+            style={mode === 'sequence' ? { fontSize: 'var(--caa-testo, 1.25rem)' } : undefined}
+            className={`font-bold uppercase tracking-wide ${mode === 'sequence' ? 'break-words leading-tight' : 'truncate text-sm md:text-base'} ${!isLocked && onEditLabel ? 'cursor-text hover:text-blue-600 dark:hover:text-blue-400' : ''} ${item.completed ? 'line-through decoration-2 text-slate-500' : 'text-slate-800 dark:text-slate-200'}`}
+          >{item.label}</p>
         )}
       </div>
     </div>
@@ -2859,6 +2871,39 @@ export default function App() {
   const { ref: pecsWrapRef, scale: pecsScale } = useFitToWidth(currentBoard?.type === 'pecs');
 
   /**
+   * Dimensioni di tessere e testo per agenda e storie. Con "adatta alla pagina"
+   * la misura la decide il calcolo geometrico, non il cursore.
+   */
+  const impostazioniStampa = useMemo(() => ({
+    simboloCm: currentBoard?.settings?.simboloCm ?? (currentBoard?.type === 'story' ? 3.5 : 2.5),
+    testoPt: currentBoard?.settings?.testoPt ?? 14,
+    adattaPagina: !!currentBoard?.settings?.adattaPagina,
+    verso: (currentBoard?.settings?.printOrientation === 'landscape' ? 'landscape' : 'portrait') as 'portrait' | 'landscape',
+  }), [currentBoard]);
+
+  const disposizioneStampa: 'colonna' | 'griglia' =
+    currentBoard?.type === 'sequence' && currentBoard?.settings?.orientation === 'vertical'
+      ? 'colonna'
+      : 'griglia';
+
+  const latoSimbolo = useMemo(() => {
+    if (!impostazioniStampa.adattaPagina) return impostazioniStampa.simboloCm;
+    return adattaSimboloAllaPagina({
+      elementi: activeItems.length,
+      verso: impostazioniStampa.verso,
+      disposizione: disposizioneStampa,
+      altezzaTesto: impostazioniStampa.testoPt / 28.35,
+    }).lato;
+  }, [impostazioniStampa, activeItems.length, disposizioneStampa]);
+
+  const stiliDimensione = variabiliDimensione(latoSimbolo, impostazioniStampa.testoPt);
+
+  const cambiaImpostazioneStampa = useCallback((campo: string, valore: any) => {
+    // Il verso del foglio ha già il suo nome storico nelle impostazioni.
+    updateTokenSettings(campo === 'verso' ? 'printOrientation' : campo, valore);
+  }, []);
+
+  /**
    * Testo sorgente della storia. I progetti creati con la versione precedente
    * hanno solo le tessere: ricostruiamo il testo dalle etichette, così si
    * aprono e si continuano a modificare senza perdere nulla.
@@ -3266,34 +3311,6 @@ export default function App() {
                           {currentBoard.settings?.orientation === 'vertical' ? <ArrowDown className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />} Orientamento
                         </button>
 
-                        {/* Stampa dell'agenda: le agende si appendono al muro o
-                            si mettono nello zaino, quindi servono su carta. */}
-                        <div className="flex items-center gap-2 p-1 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-800">
-                          <div className="flex bg-white dark:bg-slate-800 rounded-md p-0.5 border border-emerald-200 dark:border-emerald-800">
-                            <button
-                              onClick={() => updateTokenSettings('printOrientation', 'portrait')}
-                              title="Foglio verticale"
-                              aria-pressed={(currentBoard.settings?.printOrientation ?? 'portrait') === 'portrait'}
-                              className={`px-2.5 py-2 min-h-touch rounded text-xs font-bold flex items-center gap-1 transition-colors ${(currentBoard.settings?.printOrientation ?? 'portrait') === 'portrait' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
-                            >
-                              <div className="w-3 h-4 border-2 border-current rounded-sm"></div> Vert.
-                            </button>
-                            <button
-                              onClick={() => updateTokenSettings('printOrientation', 'landscape')}
-                              title="Foglio orizzontale"
-                              aria-pressed={currentBoard.settings?.printOrientation === 'landscape'}
-                              className={`px-2.5 py-2 min-h-touch rounded text-xs font-bold flex items-center gap-1 transition-colors ${currentBoard.settings?.printOrientation === 'landscape' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
-                            >
-                              <div className="w-4 h-3 border-2 border-current rounded-sm"></div> Orizz.
-                            </button>
-                          </div>
-                          <button
-                            onClick={avviaStampa}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 min-h-touch rounded-lg font-bold flex items-center gap-2 shadow-sm text-sm"
-                          >
-                            <Printer className="w-4 h-4" /> Stampa
-                          </button>
-                        </div>
                       </>
                     )}
                     {currentBoard.type === 'token' && (
@@ -3323,6 +3340,18 @@ export default function App() {
                   </div>
                 )}
               </div>
+              {/* Dimensioni e stampa: condivisi fra agenda e storie. */}
+              {currentBoard.type === 'sequence' && !isLocked && (
+                <ControlliStampa
+                  impostazioni={impostazioniStampa}
+                  onCambia={cambiaImpostazioneStampa}
+                  onStampa={avviaStampa}
+                  elementi={activeItems.length}
+                  disposizione={disposizioneStampa}
+                  tinta="emerald"
+                />
+              )}
+
               {currentBoard.type === 'grid' && (
                 <div className="flex items-end gap-1 overflow-x-auto pb-0 border-b border-slate-200 dark:border-slate-700 mt-4 px-2 scrollbar-hide">
                   {currentBoard.pages.map((page, index) => (
@@ -3485,26 +3514,6 @@ export default function App() {
                       <BookOpen className="w-5 h-5" />
                       <span>Editor Storia</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {/* Selettore Orientamento Stampa */}
-                      <div className="flex bg-white dark:bg-slate-800 rounded-lg p-1 border border-pink-200 dark:border-pink-800">
-                        <button
-                          onClick={() => updateTokenSettings('printOrientation', 'portrait')}
-                          className={`px-3 py-2 min-h-touch rounded-md text-xs font-bold flex items-center gap-1 transition-colors ${(!currentBoard.settings.printOrientation || currentBoard.settings.printOrientation === 'portrait') ? 'bg-pink-100 text-pink-800' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
-                        >
-                          <div className="w-3 h-4 border-2 border-current rounded-sm"></div> Vert.
-                        </button>
-                        <button
-                          onClick={() => updateTokenSettings('printOrientation', 'landscape')}
-                          className={`px-3 py-2 min-h-touch rounded-md text-xs font-bold flex items-center gap-1 transition-colors ${(currentBoard.settings.printOrientation === 'landscape') ? 'bg-pink-100 text-pink-800' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
-                        >
-                          <div className="w-4 h-3 border-2 border-current rounded-sm"></div> Orizz.
-                        </button>
-                      </div>
-                      <button onClick={avviaStampa} className="bg-pink-600 hover:bg-pink-700 text-white px-4 py-3 min-h-touch rounded-lg font-bold flex items-center gap-2 shadow-sm text-sm">
-                        <Printer className="w-4 h-4" /> Stampa
-                      </button>
-                    </div>
                   </div>
 
                   <StoryWriter
@@ -3517,6 +3526,17 @@ export default function App() {
                     isLocked={isLocked}
                     onLeggi={voiceEnabled && speechAvailable ? speak : undefined}
                     versioneVocabolario={versioneVocabolario}
+                    stiliDimensione={stiliDimensione}
+                    controlli={!isLocked && (
+                      <ControlliStampa
+                        impostazioni={impostazioniStampa}
+                        onCambia={cambiaImpostazioneStampa}
+                        onStampa={avviaStampa}
+                        elementi={activeItems.length}
+                        disposizione="griglia"
+                        tinta="pink"
+                      />
+                    )}
                     onApriRicerca={(chiave, testoTessera) => {
                       setEditingContext({ type: 'storyWord', chiave, initialTerm: testoTessera });
                       setShowSearch(true);
@@ -3658,8 +3678,8 @@ export default function App() {
                     ))}
                   </div>
                 ) : (
-                  <div className={`print-only-content ${currentBoard.settings?.orientation === 'vertical'
-                    ? 'flex flex-col gap-4 w-full max-w-md mx-auto'
+                  <div style={stiliDimensione} className={`print-only-content agenda-stampa ${currentBoard.settings?.orientation === 'vertical'
+                    ? 'flex flex-col gap-4 w-full max-w-2xl mx-auto print:max-w-none'
                     // In stampa niente scorrimento orizzontale: le tessere vanno
                     // a capo, altrimenti oltre il bordo del foglio si perdono.
                     : 'flex gap-4 overflow-x-auto print:overflow-visible print:flex-wrap print:justify-start pb-6 pt-2 snap-x px-2 h-full items-center w-full'}`}>
@@ -3683,6 +3703,20 @@ export default function App() {
                         )}
                         {/* --------------------------------------- */}
 
+                        {/* Numero del passo e casella da spuntare: compaiono solo
+                            su carta, dove l'agenda si segna a penna. Stanno a
+                            fianco della tessera: sovrapposti coprivano il simbolo. */}
+                        <div className="flex items-center gap-3 w-full">
+                          <span className="hidden print:flex items-center gap-2 shrink-0">
+                            <span className="font-black tabular-nums text-black" style={{ fontSize: 'var(--caa-testo, 14pt)' }}>
+                              {index + 1}.
+                            </span>
+                            <span
+                              className="border-2 border-black rounded-sm block shrink-0"
+                              style={{ width: 'calc(var(--caa-testo, 14pt) * 1.6)', height: 'calc(var(--caa-testo, 14pt) * 1.6)' }}
+                            />
+                          </span>
+                          <div className="flex-1 min-w-0">
                         <PictogramCard
                           item={item}
                           mode="sequence"
@@ -3695,7 +3729,9 @@ export default function App() {
                           onEditLabel={updateLabel}
                           onToggleComplete={toggleComplete}
                         />
-                        {index < activeItems.length - 1 && <div className="flex justify-center p-2 text-slate-300">{currentBoard.settings?.orientation === 'vertical' ? <ArrowDown className="w-6 h-6" /> : <ArrowRight className="w-6 h-6" />}</div>}
+                          </div>
+                        </div>
+                        {index < activeItems.length - 1 && <div className="flex justify-center p-2 text-slate-300 print:text-black">{currentBoard.settings?.orientation === 'vertical' ? <ArrowDown className="w-6 h-6" /> : <ArrowRight className="w-6 h-6" />}</div>}
                       </div>
                     ))}
                   </div>
